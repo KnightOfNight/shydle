@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wordle</title>
+    <link rel="stylesheet" href="./styles.css?v=4" />
+  </head>
+  <body>
+    <main class="app">
+      <h1 class="app-title">SHYDLE</h1>
+
+      <section class="game-shell" aria-label="Wordle game">
+        <div class="play-area">
+          <div class="board-frame">
+            <div id="board" class="board" aria-label="Guess board"></div>
+          </div>
+
+          <div class="side-panel-stack">
+            <div class="keyboard-frame">
+              <div
+                id="keyboard"
+                class="keyboard"
+                aria-label="On-screen keyboard"
+              ></div>
+              <div class="keyboard-actions" aria-label="Keyboard actions">
+                <button
+                  id="backspace-key-button"
+                  class="keyboard-action keyboard-action-backspace"
+                  type="button"
+                >
+                  Backspace
+                </button>
+                <button
+                  id="enter-key-button"
+                  class="keyboard-action keyboard-action-enter"
+                  type="button"
+                >
+                  Enter
+                </button>
+              </div>
+            </div>
+  
+            <div class="message-frame">
+              <p id="hint-message" class="message message-hint is-hidden" aria-live="polite"></p>
+              <hr id="message-separator" class="message-separator is-hidden" />
+              <p id="message" class="message" aria-live="polite">
+                Type a five-letter word and press ENTER.
+              </p>
+            </div>
+          </div>
+
+          <div class="button-frame">
+            <div class="board-actions">
+              <button id="new-game-button" class="new-game-button" type="button">
+                Start New Game
+              </button>
+              <button id="hint-button" class="secondary-button" type="button">
+                Hint
+              </button>
+            </div>
+          </div>
+
+          <div class="controls-frame">
+            <div class="controls-row">
+              <label class="control-group" for="guess-count">
+                <span class="control-label">Guesses</span>
+                <select id="guess-count" class="control-input">
+                  <option value="2">2 - Extreme</option>
+                  <option value="3">3 - Brutal</option>
+                  <option value="4">4 - Spicy</option>
+                  <option value="5" selected>5 - Classic</option>
+                  <option value="6">6 - Chill</option>
+                  <option value="7">7 - Lame</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <div
+      id="confirm-modal"
+      class="modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      aria-describedby="confirm-modal-text"
+    >
+      <div id="confirm-modal-backdrop" class="modal-backdrop"></div>
+      <div class="modal-panel">
+        <h2 id="confirm-modal-title" class="modal-title">Start new game?</h2>
+        <p id="confirm-modal-text" class="modal-text">
+          Your current progress will be lost.
+        </p>
+        <div class="modal-actions">
+          <button id="confirm-cancel-button" class="modal-button modal-button-cancel" type="button">
+            Keep Playing
+          </button>
+          <button id="confirm-accept-button" class="modal-button modal-button-accept" type="button">
+            Start New Game
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./script.js?v=6"></script>
+  </body>
+</html>
