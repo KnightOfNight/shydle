@@ -18,29 +18,44 @@ Standalone Wordle-style browser game built with static HTML, CSS, and JavaScript
 - `script.js`: game logic
 - `words.json`: runtime word database and hint source
 - `scripts/build_fallback_words.py`: local builder for `words.json`
-- `start-server.sh`: helper script to launch a local Python web server
+- `simple-server.sh`: helper script to start, stop, and inspect the background local server
 - `scripts/browser-smoke-test.js`: browser smoke test
 
 ## Run locally
 
 Serve the folder over HTTP. The game fetches `words.json`, so opening `index.html` directly from disk is not the intended path.
 
-### Option 1: Start with the helper script
+### Option 1: Use the helper script
 
 ```bash
-./start-server.sh
+./simple-server.sh start
 ```
 
-This starts:
+This starts the server in the background, writes its PID to `server.pid`, and appends logs to `server.log`.
+
+It runs:
 
 ```bash
 python3 -m http.server 8000 --bind 0.0.0.0
 ```
 
-Use a different port if needed:
+Check status with:
 
 ```bash
-./start-server.sh 9000
+./simple-server.sh status
+```
+
+Stop it with:
+
+```bash
+./simple-server.sh stop
+```
+
+Use a different port or bind address with environment variables:
+
+```bash
+PORT=9000 ./simple-server.sh start
+BIND_ADDRESS=127.0.0.1 ./simple-server.sh start
 ```
 
 ### Option 2: Start Python manually
