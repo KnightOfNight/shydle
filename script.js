@@ -3,9 +3,12 @@ const MAX_GUESSES = 5;
 const GUESS_COUNT_COOKIE = "wordle_guess_count";
 const GUESS_COUNT_STORAGE_KEY = "wordle_guess_count";
 const PLAYED_WORDS_COOKIE = "wordle_played_words";
+const CATEGORY_COOKIE = "wordle_category";
+const CATEGORY_STORAGE_KEY = "wordle_category";
 const PLAY_EVENTS_STORAGE_KEY = "wordle_play_events";
 const WORDS_URL = "./words.json";
 const WORDS_FETCH_TIMEOUT_MS = 2000;
+const DEFAULT_CATEGORY = "all";
 const TEST_WIN_WORD = "HISHY";
 const TEST_LOSE_WORD = "BYSHY";
 const TEST_MESSAGE_WORD = "DESHY";
@@ -25,6 +28,7 @@ const message = document.getElementById("message");
 const newGameButton = document.getElementById("new-game-button");
 const settingsButton = document.getElementById("settings-button");
 const guessCountSelect = document.getElementById("guess-count");
+const categorySelect = document.getElementById("category-select");
 const settingsModal = document.getElementById("settings-modal");
 const settingsModalBackdrop = document.getElementById("settings-modal-backdrop");
 const settingsCloseButton = document.getElementById("settings-close-button");
@@ -52,8 +56,11 @@ let gameOver = false;
 let isRevealing = false;
 let tileRows = [];
 let dictionary = [];
-let dictionarySet = new Set(dictionary);
-let playableWords = [];
+let dictionarySet = new Set();
+let allWords = [];
+let allWordsSet = new Set();
+let categories = {};
+let currentCategory = DEFAULT_CATEGORY;
 let dictionaryReady = false;
 let isCheckingGuess = false;
 let currentMaxGuesses = MAX_GUESSES;
@@ -69,7 +76,6 @@ let revealedCorrectIndices = new Set();
 let activeModalCleanup = null;
 let activeModal = null;
 const keyStates = new Map();
-const hintCache = new Map();
 
 function getWebpageVersion() {
   const meta = document.querySelector('meta[name="webpage-version"]');
@@ -99,18 +105,54 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = WORDS_FETCH_TIMEO
 }
 
 function parseWordsPayload(payload) {
-  const entries = Array.isArray(payload) ? payload : payload?.words;
-  if (!Array.isArray(entries)) {
-    throw new Error("Words payload is not an array.");
+  const categoryEntries = payload?.categories;
+  if (!categoryEntries || typeof categoryEntries !== "object" || Array.isArray(categoryEntries)) {
+    throw new Error("Words payload does not contain categories.");
   }
 
-  return entries
-    .filter((entry) => entry && typeof entry.word === "string")
-    .map((entry) => ({
-      word: entry.word.trim().toUpperCase(),
-      definition: typeof entry.definition === "string" ? entry.definition.trim() : "",
-    }))
-    .filter((entry) => /^[A-Z]{5}$/.test(entry.word));
+  const parsedCategories = {};
+  const seenWords = new Map();
+
+  Object.entries(categoryEntries).forEach(([name, entries]) => {
+    if (name === "all") {
+      return;
+    }
+
+    if (!Array.isArray(entries)) {
+      return;
+    }
+
+    const words = entries
+      .filter((entry) => typeof entry === "string")
+      .map((entry) => entry.trim().toUpperCase())
+      .filter((entry) => /^[A-Z]{5}$/.test(entry));
+
+    const uniqueWords = [...new Set(words)];
+    uniqueWords.forEach((word) => {
+      if (seenWords.has(word)) {
+        throw new Error(`Word ${word} appears in both ${seenWords.get(word)} and ${name}.`);
+      }
+      seenWords.set(word, name);
+    });
+
+    if (uniqueWords.length > 0) {
+      parsedCategories[name] = uniqueWords;
+    }
+  });
+
+  if (Object.keys(parsedCategories).length === 0) {
+    throw new Error("Words payload has no valid categories.");
+  }
+
+  return parsedCategories;
+}
+
+function refreshCategoryPools() {
+  const categoryNames = Object.keys(categories).filter((name) => name !== "all");
+  const combinedWords = categoryNames.flatMap((name) => categories[name]);
+  categories.all = [...new Set(combinedWords)];
+  allWords = [...categories.all];
+  allWordsSet = new Set(allWords);
 }
 
 async function loadWordsEntries(options = {}) {
@@ -124,20 +166,9 @@ async function loadWordsEntries(options = {}) {
   }
 
   const payload = await response.json();
-  const entries = parseWordsPayload(payload);
-  if (entries.length === 0) {
-    throw new Error("Words file is empty.");
-  }
-
-  playableWords = entries.map((entry) => entry.word);
-  dictionary = [...playableWords];
-  dictionarySet = new Set(dictionary);
-
-  hintCache.clear();
-
-  entries.forEach((entry) => {
-    hintCache.set(entry.word, entry.definition);
-  });
+  categories = parseWordsPayload(payload);
+  refreshCategoryPools();
+  applyCategory(currentCategory, { fallbackToDefault: true });
 }
 
 function readGuessCountCookie() {
@@ -168,20 +199,34 @@ function readPlayedWordsCookie() {
 
   try {
     const parsed = JSON.parse(decodeURIComponent(cookie.split("=")[1]));
-    if (!Array.isArray(parsed)) {
-      return [];
+    if (Array.isArray(parsed)) {
+      return { [currentCategory]: parsed
+        .filter((word) => typeof word === "string" && /^[A-Z]{5}$/.test(word)) };
     }
 
-    return parsed
-      .filter((word) => typeof word === "string" && /^[A-Z]{5}$/.test(word));
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const result = {};
+    Object.entries(parsed).forEach(([category, words]) => {
+      if (!Array.isArray(words)) {
+        return;
+      }
+
+      result[category] = words
+        .filter((word) => typeof word === "string" && /^[A-Z]{5}$/.test(word));
+    });
+
+    return result;
   } catch (error) {
     console.error(error);
-    return [];
+    return {};
   }
 }
 
-function writePlayedWordsCookie(words) {
-  document.cookie = `${PLAYED_WORDS_COOKIE}=${encodeURIComponent(JSON.stringify(words))}; max-age=31536000; path=/; SameSite=Lax`;
+function writePlayedWordsCookie(wordsByCategory) {
+  document.cookie = `${PLAYED_WORDS_COOKIE}=${encodeURIComponent(JSON.stringify(wordsByCategory))}; max-age=31536000; path=/; SameSite=Lax`;
 }
 
 function readGuessCountStorage() {
@@ -264,11 +309,45 @@ function writeGuessCountStorage(value) {
   }
 }
 
+function readCategoryCookie() {
+  const cookie = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${CATEGORY_COOKIE}=`));
+
+  return cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
+}
+
+function writeCategoryCookie(value) {
+  document.cookie = `${CATEGORY_COOKIE}=${encodeURIComponent(value)}; max-age=31536000; path=/; SameSite=Lax`;
+}
+
+function readCategoryStorage() {
+  try {
+    return localStorage.getItem(CATEGORY_STORAGE_KEY);
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+function writeCategoryStorage(value) {
+  try {
+    localStorage.setItem(CATEGORY_STORAGE_KEY, value);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 function initializeGuessCountSetting() {
   const savedGuessCount = readGuessCountStorage() ?? readGuessCountCookie();
   const initialGuessCount = savedGuessCount ?? MAX_GUESSES;
   guessCountSelect.value = String(initialGuessCount);
   currentMaxGuesses = initialGuessCount;
+}
+
+function initializeCategorySetting() {
+  const savedCategory = readCategoryStorage() ?? readCategoryCookie();
+  applyCategory(savedCategory ?? DEFAULT_CATEGORY, { fallbackToDefault: true });
 }
 
 function escapeHtml(value) {
@@ -286,6 +365,28 @@ function renderMessages() {
 
 function setControlsDisabled(disabled) {
   guessCountSelect.disabled = disabled;
+  categorySelect.disabled = disabled;
+}
+
+function applyCategory(nextCategory, options = {}) {
+  const { fallbackToDefault = false } = options;
+  const categoryNames = Object.keys(categories);
+  let resolvedCategory = nextCategory;
+
+  if (!resolvedCategory || !categories[resolvedCategory]) {
+    resolvedCategory = fallbackToDefault
+      ? (categories[DEFAULT_CATEGORY] ? DEFAULT_CATEGORY : categoryNames[0])
+      : null;
+  }
+
+  if (!resolvedCategory || !categories[resolvedCategory]) {
+    throw new Error("No categories are available.");
+  }
+
+  currentCategory = resolvedCategory;
+  categorySelect.value = currentCategory;
+  dictionary = [...categories[currentCategory]];
+  dictionarySet = new Set(dictionary);
 }
 
 function pickNextWord() {
@@ -293,7 +394,8 @@ function pickNextWord() {
     throw new Error("No words are available.");
   }
 
-  let playedWords = readPlayedWordsCookie()
+  const playedWordsByCategory = readPlayedWordsCookie();
+  let playedWords = (playedWordsByCategory[currentCategory] || [])
     .filter((word) => dictionarySet.has(word));
   let unplayedWords = dictionary.filter((word) => !playedWords.includes(word));
 
@@ -303,7 +405,8 @@ function pickNextWord() {
   }
 
   const word = unplayedWords[Math.floor(Math.random() * unplayedWords.length)];
-  writePlayedWordsCookie([...playedWords, word]);
+  playedWordsByCategory[currentCategory] = [...playedWords, word];
+  writePlayedWordsCookie(playedWordsByCategory);
   return word;
 }
 
@@ -395,30 +498,25 @@ function getRemainingFreeHintCount() {
   );
 }
 
-function setHint(definition) {
-  if (!definition) {
-    if (getRemainingFreeHintCount() <= 0) {
-      setInlineMessage("<em>You only need one more letter!</em>");
-      return;
-    }
-
-    const availableIndices = [0, 1, 2, 3, 4]
-      .filter((index) => !revealedHintIndices.includes(index))
-      .filter((index) => !revealedCorrectIndices.has(index));
-    const index = availableIndices.length > 0
-      ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
-      : Math.floor(Math.random() * WORD_LENGTH);
-
-    if (!revealedHintIndices.includes(index)) {
-      revealedHintIndices.push(index);
-    }
-
-    revealFreeLetter(index);
-    setInlineMessage(`<em>The word contains an "${escapeHtml(secretWord[index])}".</em>`);
+function setHint() {
+  if (getRemainingFreeHintCount() <= 0) {
+    setInlineMessage("<em>You only need one more letter!</em>");
     return;
   }
 
-  setInlineMessage(`<em>${escapeHtml(definition)}</em>`);
+  const availableIndices = [0, 1, 2, 3, 4]
+    .filter((index) => !revealedHintIndices.includes(index))
+    .filter((index) => !revealedCorrectIndices.has(index));
+  const index = availableIndices.length > 0
+    ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
+    : Math.floor(Math.random() * WORD_LENGTH);
+
+  if (!revealedHintIndices.includes(index)) {
+    revealedHintIndices.push(index);
+  }
+
+  revealFreeLetter(index);
+  setInlineMessage(`<em>The word contains an "${escapeHtml(secretWord[index])}".</em>`);
 }
 
 async function handleHintRequest() {
@@ -441,7 +539,7 @@ async function handleHintRequest() {
       return;
     }
 
-    setHint(hintCache.get(requestedWord));
+    setHint();
   } finally {
     isLoadingHint = false;
     hintButton.disabled = false;
@@ -587,7 +685,7 @@ async function submitGuess() {
 
   const allowedGuess = (isTestWinWord || isTestLoseWord || isTestMessageWord)
     ? true
-    : dictionarySet.has(currentGuess);
+    : allWordsSet.has(currentGuess);
   if (submissionVersion !== gameStateVersion) {
     return;
   }
@@ -814,6 +912,7 @@ function openModal({
 
 function openSettingsModal() {
   guessCountSelect.value = String(currentMaxGuesses);
+  categorySelect.value = currentCategory;
 
   const handleClose = () => {
     closeModal();
@@ -821,7 +920,7 @@ function openSettingsModal() {
 
   openModal({
     modal: settingsModal,
-    initialFocus: guessCountSelect,
+    initialFocus: settingsCloseButton,
     bindings: [
       { element: settingsModalBackdrop, event: "click", handler: handleClose },
       { element: settingsCloseButton, event: "click", handler: handleClose },
@@ -977,6 +1076,33 @@ guessCountSelect.addEventListener("change", () => {
   applyGuessCountChange(nextGuessCount);
 });
 
+categorySelect.addEventListener("change", () => {
+  const nextCategory = categorySelect.value;
+
+  if (nextCategory === currentCategory) {
+    closeModal();
+    return;
+  }
+
+  closeModal({ restoreFocus: false });
+
+  if (hasInProgressGame()) {
+    categorySelect.value = currentCategory;
+    openConfirmModal(() => {
+      applyCategory(nextCategory, { fallbackToDefault: true });
+      writeCategoryCookie(currentCategory);
+      writeCategoryStorage(currentCategory);
+      resetGame();
+    });
+    return;
+  }
+
+  applyCategory(nextCategory, { fallbackToDefault: true });
+  writeCategoryCookie(currentCategory);
+  writeCategoryStorage(currentCategory);
+  resetGame();
+});
+
 async function initializeGame() {
   initializeGuessCountSetting();
   refresh24HourPlayCount();
@@ -984,6 +1110,9 @@ async function initializeGame() {
   initializeKeyboard();
   setControlsDisabled(true);
   await loadWordsEntries({ version: getWebpageVersion() });
+  initializeCategorySetting();
+  writeCategoryCookie(currentCategory);
+  writeCategoryStorage(currentCategory);
   await resetGame();
 }
 

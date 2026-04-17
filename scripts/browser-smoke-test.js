@@ -375,11 +375,10 @@ async function runSmokeChecks() {
     await session.evaluate(`winNewGameButton.click()`);
     await sleep(250);
     await session.evaluate(`(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "C", bubbles: true }));
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "R", bubbles: true }));
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "A", bubbles: true }));
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "N", bubbles: true }));
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "E", bubbles: true }));
+      const guess = dictionary[0];
+      guess.split("").forEach((letter) => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: letter, bubbles: true }));
+      });
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     })()`);
     await sleep(200);

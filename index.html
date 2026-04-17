@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SHYDLE</title>
-    <meta name="webpage-version" content="9bd91eb0b79e" />
-    <link rel="stylesheet" href="./styles.css?v=9bd91eb0b79e" />
+    <meta name="webpage-version" content="63c0c507706a" />
+    <link rel="stylesheet" href="./styles.css?v=63c0c507706a" />
   </head>
   <body>
     <main class="app">
@@ -129,8 +129,20 @@
       <div class="modal-panel">
         <h2 id="settings-modal-title" class="modal-title">Settings</h2>
         <p id="settings-modal-text" class="modal-text">
-          Choose the number of guesses.
+          Choose the category and number of guesses.
         </p>
+        <div class="settings-field">
+          <label class="control-group" for="category-select">
+            <span class="control-label">Category</span>
+            <select id="category-select" class="control-input">
+              <option value="all" selected>All</option>
+              <option value="general">General</option>
+              <option value="food">Food</option>
+              <option value="politics">Politics</option>
+              <option value="science">Science</option>
+            </select>
+          </label>
+        </div>
         <div class="settings-field">
           <label class="control-group" for="guess-count">
             <span class="control-label">Guesses</span>
@@ -194,6 +206,6 @@
       </div>
     </div>
 
-    <script src="./script.js?v=9bd91eb0b79e"></script>
+    <script src="./script.js?v=63c0c507706a"></script>
   </body>
 </html>

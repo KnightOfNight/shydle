@@ -5,21 +5,24 @@ Standalone Wordle-style browser game built with static HTML, CSS, and JavaScript
 ## Current behavior
 
 - The game loads its runtime word database from `words.json`.
-- Each entry in `words.json` contains a five-letter word and its hint definition.
-- Guesses are validated only against the words loaded from `words.json`.
-- Clicking `Start New Game` reloads `words.json` with a cache-busting query string before choosing the next answer.
-- Answer selection is random, but the game remembers previously played answers in a cookie and avoids repeats until the full local pool has been used.
-- Hints come from the definition stored in `words.json`.
+- `words.json` contains category-based five-letter word lists.
+- The stored categories are `general`, `food`, `politics`, and `science`.
+- The game also builds a virtual `all` category from the union of those lists.
+- `all` is the default category unless the player chooses another one in Settings.
+- Answer selection comes from the currently selected category.
+- Typed guesses are validated against the full virtual `all` category, regardless of the selected answer category.
+- Answer selection is random, but the game remembers previously played answers in a cookie and avoids repeats until the full category pool has been used.
+- Hints are free-letter hints only; the game no longer uses dictionary definitions.
 
 ## Files
 
 - `index.html`: page structure
 - `styles.css`: game styling
 - `script.js`: game logic
-- `words.json`: runtime word database and hint source
-- `scripts/build_fallback_words.py`: local builder for `words.json`
+- `words.json`: runtime category-based word database
 - `simple-server.sh`: helper script to start, stop, and inspect the background local server
 - `scripts/browser-smoke-test.js`: browser smoke test
+- `scripts/browser-comprehensive-test.js`: broader browser regression test
 
 ## Run locally
 
@@ -78,41 +81,18 @@ From another computer on the same network:
 http://YOUR_COMPUTER_IP:8000
 ```
 
-## Build `words.json`
-
-The builder now works locally by default:
-
-- candidate words come from `/usr/share/dict/words`
-- definitions come from local WordNet via `wn`
-- output is written to `words.json`
-
-Default run:
-
-```bash
-python3 scripts/build_fallback_words.py
-```
-
-That adds up to 10 new words to `words.json`.
-
-Useful options:
-
-```bash
-python3 scripts/build_fallback_words.py 25
-python3 scripts/build_fallback_words.py --candidates-file scripts/fallback-seed.txt
-```
-
-Notes:
-
-- Existing words already present in `words.json` are skipped.
-- The builder keeps going until it adds the requested number of new words or exhausts the candidate source.
-- `HELLO` is treated as a required word and is preserved in the output.
-
 ## Test
 
 Run the browser smoke test with:
 
 ```bash
 make test-browser
+```
+
+Run the broader browser regression suite with:
+
+```bash
+make test-browser-comprehensive
 ```
 
 ## Notes about LAN access

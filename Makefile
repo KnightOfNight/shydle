@@ -1,4 +1,4 @@
-.PHONY: test-browser webpage words-webpage
+.PHONY: test-browser test-browser-comprehensive webpage
 
 NODE ?= /opt/homebrew/bin/node
 PYTHON ?= python3
@@ -9,9 +9,8 @@ WEBPAGE_SOURCES = index.html.in script.js styles.css words.json
 test-browser:
 	$(NODE) scripts/browser-smoke-test.js --python $(PYTHON) --chrome $(CHROME)
 
-words-webpage:
-	$(PYTHON) scripts/build_fallback_words.py $(WORDS_COUNT)
-	$(MAKE) webpage
+test-browser-comprehensive:
+	$(NODE) scripts/browser-comprehensive-test.js --python $(PYTHON) --chrome $(CHROME)
 
 webpage:
 	@VERSION=$$(cat $(WEBPAGE_SOURCES) | shasum -a 256 | awk '{print $$1}' | cut -c1-12); \
