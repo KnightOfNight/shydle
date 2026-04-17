@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SHYDLE</title>
-    <meta name="webpage-version" content="9bd91eb0b79e" />
-    <link rel="stylesheet" href="./styles.css?v=9bd91eb0b79e" />
+    <meta name="webpage-version" content="__WEBPAGE_VERSION__" />
+    <link rel="stylesheet" href="./styles.css?v=__WEBPAGE_VERSION__" />
   </head>
   <body>
     <main class="app">
@@ -194,6 +194,6 @@
       </div>
     </div>
 
-    <script src="./script.js?v=9bd91eb0b79e"></script>
+    <script src="./script.js?v=__WEBPAGE_VERSION__"></script>
   </body>
 </html>

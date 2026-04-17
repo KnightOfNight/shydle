@@ -277,6 +277,48 @@ async function runSmokeChecks() {
     assert(afterGuessCountConfirm.currentRow === 0, `Expected currentRow reset to 0, got ${afterGuessCountConfirm.currentRow}`);
 
     await session.evaluate(`(() => {
+      resetGame();
+      currentGuess = "AB";
+      refreshCurrentRow();
+      window.__abandonedWord = secretWord;
+      handleStartNewGame();
+    })()`);
+    const revealConfirmCheck = await session.evaluate(`(() => ({
+      modalOpen: isModalOpen,
+      confirmTitle: document.querySelector("#confirm-modal-title")?.textContent.trim(),
+      guess: currentGuess
+    }))()`);
+    assert(revealConfirmCheck.modalOpen === true, "Start-new-game confirmation did not open for in-progress game");
+    assert(revealConfirmCheck.confirmTitle === "Start new game?", `Unexpected confirmation title: ${revealConfirmCheck.confirmTitle}`);
+    await session.evaluate(`confirmAcceptButton.click()`);
+    await sleep(100);
+    const revealModalCheck = await session.evaluate(`(() => ({
+      modalOpen: isModalOpen,
+      revealOpen: document.querySelector("#reveal-modal")?.classList.contains("is-open"),
+      revealTitle: document.querySelector("#reveal-modal-title")?.textContent.trim(),
+      revealText: document.querySelector("#reveal-modal-text")?.textContent.trim(),
+      guess: currentGuess
+    }))()`);
+    assert(revealModalCheck.modalOpen === true, "Reveal modal did not open after confirming abandonment");
+    assert(revealModalCheck.revealOpen === true, "Reveal modal is not visibly open");
+    assert(revealModalCheck.revealTitle === "The word was...", `Unexpected reveal title: ${revealModalCheck.revealTitle}`);
+    assert(
+      revealModalCheck.revealText === `The word was ${await session.evaluate(`window.__abandonedWord`)}.`,
+      `Unexpected reveal text: ${revealModalCheck.revealText}`,
+    );
+    assert(revealModalCheck.guess === "AB", `Expected in-progress guess to remain until reveal acknowledgement, got ${revealModalCheck.guess}`);
+    await session.evaluate(`revealOkButton.click()`);
+    await sleep(150);
+    const revealResetCheck = await session.evaluate(`(() => ({
+      modalOpen: isModalOpen,
+      currentGuess,
+      currentRow
+    }))()`);
+    assert(revealResetCheck.modalOpen === false, "Reveal modal did not close after acknowledgement");
+    assert(revealResetCheck.currentGuess === "", `Expected cleared guess after reveal acknowledgement, got ${revealResetCheck.currentGuess}`);
+    assert(revealResetCheck.currentRow === 0, `Expected currentRow reset after reveal acknowledgement, got ${revealResetCheck.currentRow}`);
+
+    await session.evaluate(`(() => {
       currentGuess = "ABCDE";
       refreshCurrentRow();
       const original = window.isAllowedGuess;
@@ -316,24 +358,22 @@ async function runSmokeChecks() {
     await sleep(RACE_WAIT_MS);
     const solvedState = await session.evaluate(`(() => ({
       gameOver,
-      message: document.querySelector("#message")?.textContent.trim()
+      modalOpen: isModalOpen,
+      winOpen: document.querySelector("#win-modal")?.classList.contains("is-open"),
+      winTitle: document.querySelector("#win-modal-title")?.textContent.trim(),
+      winText: document.querySelector("#win-modal-text")?.textContent.trim()
     }))()`);
     assert(solvedState.gameOver === true, "Expected forced solve flow to end the game");
+    assert(solvedState.modalOpen === true, "Expected solved game to open the win modal");
+    assert(solvedState.winOpen === true, "Win modal is not visibly open after solving");
+    assert(solvedState.winTitle === "YOU WIN!", `Unexpected win modal title: ${solvedState.winTitle}`);
+    assert(
+      solvedState.winText === `The word was ${await session.evaluate(`secretWord`)}.`,
+      `Unexpected win modal text: ${solvedState.winText}`,
+    );
 
-    await session.evaluate(`newGameButton.click()`);
-    const postResetStart = Date.now();
-    while (true) {
-      const ready = await session.evaluate(`dictionaryReady`);
-      if (ready) {
-        break;
-      }
-
-      if (Date.now() - postResetStart > INITIALIZE_TIMEOUT_MS) {
-        throw new Error("Dictionary did not finish reloading after new game");
-      }
-
-      await sleep(250);
-    }
+    await session.evaluate(`winNewGameButton.click()`);
+    await sleep(250);
     await session.evaluate(`(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "C", bubbles: true }));
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "R", bubbles: true }));
@@ -348,7 +388,7 @@ async function runSmokeChecks() {
       currentGuess,
       currentRow
     }))()`);
-    assert(postSolveResetCheck.modalOpen === false, "Enter reopened the new-game modal after a solved-game reset");
+    assert(postSolveResetCheck.modalOpen === false, "Enter reopened a modal after a solved-game reset");
     assert(postSolveResetCheck.currentRow === 1, `Expected submitted guess to advance to row 1, got ${postSolveResetCheck.currentRow}`);
     assert(postSolveResetCheck.currentGuess === "", `Expected guess to submit cleanly after reset, got ${postSolveResetCheck.currentGuess}`);
 

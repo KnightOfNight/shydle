@@ -116,7 +116,7 @@ status_server() {
   return 1
 }
 
-case "$VERB" in
+case "${VERB:-status}" in
   start)
     start_server
     ;;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a fallback JSON word list with definitions for the browser app."""
+"""Build the runtime JSON word list for the browser app."""
 
 from __future__ import annotations
 
@@ -10,30 +10,25 @@ import re
 import shutil
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
-WORD_LIST_API_URL = "https://random-word-api.herokuapp.com/all"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "words.json"
 DEFAULT_CANDIDATES_FILE = Path("/usr/share/dict/words")
 WORDNET_COMMAND = "wn"
 REQUIRED_WORDS = ("HELLO",)
-REQUEST_TIMEOUT = 20
-MAX_RETRIES = 6
+MAX_WORD_COUNT = 10_000
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a fallback JSON file of five-letter words with definitions.",
+        description="Generate the runtime JSON word list of five-letter words.",
     )
     parser.add_argument(
         "count",
         nargs="?",
         type=int,
-        default=10,
-        help="Number of new words to add to the output JSON. Defaults to 10.",
+        default=MAX_WORD_COUNT,
+        help=f"Maximum number of words to include in the output JSON. Defaults to {MAX_WORD_COUNT}.",
     )
     parser.add_argument(
         "--output",
@@ -52,49 +47,6 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
-def fetch_json(url: str) -> object:
-    delay = 1.0
-
-    for attempt in range(MAX_RETRIES):
-        print(f"Fetching {url} (attempt {attempt + 1}/{MAX_RETRIES})", file=sys.stderr)
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "wordle-fallback-builder/1.0"},
-        )
-
-        try:
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as error:
-            if error.code == 404:
-                raise
-
-            if error.code == 429 or 500 <= error.code < 600:
-                if attempt == MAX_RETRIES - 1:
-                    raise
-                print(
-                    f"Retryable HTTP {error.code} for {url}; sleeping {delay:.1f}s before retry.",
-                    file=sys.stderr,
-                )
-                time.sleep(delay)
-                delay *= 2
-                continue
-
-            raise
-        except urllib.error.URLError:
-            if attempt == MAX_RETRIES - 1:
-                raise
-            print(
-                f"Network error for {url}; sleeping {delay:.1f}s before retry.",
-                file=sys.stderr,
-            )
-            time.sleep(delay)
-            delay *= 2
-
-    raise RuntimeError(f"Failed to fetch JSON from {url}")
-
-
 def normalize_candidates(words: list[str]) -> list[str]:
     normalized = {
         word.strip().upper()
@@ -110,56 +62,20 @@ def normalize_candidates(words: list[str]) -> list[str]:
 
 
 def load_candidates(candidates_file: Path | None) -> list[str]:
-    if candidates_file:
-        print(f"Loading candidates from {candidates_file}", file=sys.stderr)
-        raw_words = candidates_file.read_text(encoding="utf-8").splitlines()
-        candidates = normalize_candidates(raw_words)
-        print(f"Loaded {len(candidates)} candidate words from file.", file=sys.stderr)
-        return candidates
+    if not candidates_file:
+        raise RuntimeError("A local candidates file is required.")
 
-    print(f"Loading candidates from {WORD_LIST_API_URL}", file=sys.stderr)
-    payload = fetch_json(WORD_LIST_API_URL)
-    if not isinstance(payload, list):
-        raise RuntimeError("Word list API did not return a list.")
-
-    candidates = normalize_candidates(payload)
-    print(f"Loaded {len(candidates)} candidate words from API.", file=sys.stderr)
+    print(f"Loading candidates from {candidates_file}", file=sys.stderr)
+    raw_words = candidates_file.read_text(encoding="utf-8").splitlines()
+    candidates = normalize_candidates(raw_words)
+    print(f"Loaded {len(candidates)} candidate words from file.", file=sys.stderr)
     return candidates
 
 
 def load_existing_entries(output_path: Path) -> list[dict[str, str]]:
-    if not output_path.exists():
-        print(f"No existing output at {output_path}", file=sys.stderr)
-        return []
-
-    print(f"Loading existing entries from {output_path}", file=sys.stderr)
-    payload = json.loads(output_path.read_text(encoding="utf-8"))
-    raw_entries = payload if isinstance(payload, list) else payload.get("words")
-    if not isinstance(raw_entries, list):
-        raise RuntimeError(f"Existing output at {output_path} is not a valid word list.")
-
-    entries: list[dict[str, str]] = []
-    for entry in raw_entries:
-        if not isinstance(entry, dict):
-            continue
-
-        word = entry.get("word")
-        definition = entry.get("definition")
-        if not isinstance(word, str) or not isinstance(definition, str):
-            continue
-
-        normalized_word = word.strip().upper()
-        normalized_definition = definition.strip()
-        if len(normalized_word) != 5 or not normalized_word.isalpha() or not normalized_definition:
-            continue
-
-        entries.append({
-            "word": normalized_word,
-            "definition": normalized_definition,
-        })
-
-    print(f"Loaded {len(entries)} existing entries.", file=sys.stderr)
-    return entries
+    if output_path.exists():
+        print(f"Ignoring existing output at {output_path}; rebuilding from source.", file=sys.stderr)
+    return []
 
 
 def get_wordnet_definition(word: str) -> str | None:
@@ -203,12 +119,9 @@ def ensure_required_entries(entries: list[dict[str, str]]) -> list[dict[str, str
 
         print(f"Ensuring required word {word} is present.", file=sys.stderr)
         _, definition = fetch_definition(word)
-        if not definition:
-            raise RuntimeError(f"Required word {word} does not have a usable definition.")
-
         entries.append({
             "word": word,
-            "definition": definition,
+            "definition": definition or "",
         })
         seen_words.add(word)
 
@@ -219,37 +132,35 @@ def build_entries(count: int, candidates_file: Path | None, output_path: Path) -
     candidates = load_candidates(candidates_file)
     entries = ensure_required_entries(load_existing_entries(output_path))
     seen_words = {entry["word"] for entry in entries}
-    initial_count = len(entries)
+    target_count = min(count, MAX_WORD_COUNT)
 
     print(
-        f"Building fallback set by adding up to {count} new words from {len(candidates)} candidates.",
+        f"Building words.json with up to {target_count} words from {len(candidates)} candidates.",
         file=sys.stderr,
     )
 
     for index, word in enumerate(candidates, start=1):
         if word in seen_words:
-            print(f"[{index}/{len(candidates)}] Skipping {word}; already present in output.", file=sys.stderr)
+            print(f"[{index}/{len(candidates)}] Skipping {word}; already selected.", file=sys.stderr)
             continue
 
         print(f"[{index}/{len(candidates)}] Processing {word}", file=sys.stderr)
         word, definition = fetch_definition(word)
-        if definition and word not in seen_words:
-            seen_words.add(word)
-            entries.append({
-                "word": word,
-                "definition": definition,
-            })
-            print(
-                f"Collected {len(entries) - initial_count}/{count} new words: {word}",
-                file=sys.stderr,
-            )
-            if len(entries) - initial_count >= count:
-                break
-
-    added_count = len(entries) - initial_count
-    if added_count < count:
+        seen_words.add(word)
+        entries.append({
+            "word": word,
+            "definition": definition or "",
+        })
         print(
-            f"Seed list exhausted after adding {added_count} new words.",
+            f"Collected {len(entries)}/{target_count} words: {word}",
+            file=sys.stderr,
+        )
+        if len(entries) >= target_count:
+            break
+
+    if len(entries) < target_count:
+        print(
+            f"Candidate list exhausted after collecting {len(entries)} words.",
             file=sys.stderr,
         )
 

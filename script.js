@@ -3,8 +3,13 @@ const MAX_GUESSES = 5;
 const GUESS_COUNT_COOKIE = "wordle_guess_count";
 const GUESS_COUNT_STORAGE_KEY = "wordle_guess_count";
 const PLAYED_WORDS_COOKIE = "wordle_played_words";
+const PLAY_EVENTS_STORAGE_KEY = "wordle_play_events";
 const WORDS_URL = "./words.json";
 const WORDS_FETCH_TIMEOUT_MS = 2000;
+const TEST_WIN_WORD = "HISHY";
+const TEST_LOSE_WORD = "BYSHY";
+const TEST_MESSAGE_WORD = "DESHY";
+const TEST_MESSAGE_TEXT = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.";
 const KEYBOARD_ROWS = [
   ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
@@ -16,15 +21,29 @@ const keyboard = document.getElementById("keyboard");
 const enterKeyButton = document.getElementById("enter-key-button");
 const backspaceKeyButton = document.getElementById("backspace-key-button");
 const hintButton = document.getElementById("hint-button");
-const hintMessage = document.getElementById("hint-message");
-const messageSeparator = document.getElementById("message-separator");
 const message = document.getElementById("message");
 const newGameButton = document.getElementById("new-game-button");
+const settingsButton = document.getElementById("settings-button");
 const guessCountSelect = document.getElementById("guess-count");
+const settingsModal = document.getElementById("settings-modal");
+const settingsModalBackdrop = document.getElementById("settings-modal-backdrop");
+const settingsCloseButton = document.getElementById("settings-close-button");
 const confirmModal = document.getElementById("confirm-modal");
 const confirmModalBackdrop = document.getElementById("confirm-modal-backdrop");
 const confirmCancelButton = document.getElementById("confirm-cancel-button");
 const confirmAcceptButton = document.getElementById("confirm-accept-button");
+const revealModal = document.getElementById("reveal-modal");
+const revealModalBackdrop = document.getElementById("reveal-modal-backdrop");
+const revealModalText = document.getElementById("reveal-modal-text");
+const revealOkButton = document.getElementById("reveal-ok-button");
+const winModal = document.getElementById("win-modal");
+const winModalBackdrop = document.getElementById("win-modal-backdrop");
+const winModalText = document.getElementById("win-modal-text");
+const winNewGameButton = document.getElementById("win-new-game-button");
+const loseModal = document.getElementById("lose-modal");
+const loseModalBackdrop = document.getElementById("lose-modal-backdrop");
+const loseModalText = document.getElementById("lose-modal-text");
+const loseNewGameButton = document.getElementById("lose-new-game-button");
 
 let secretWord = "";
 let currentGuess = "";
@@ -41,13 +60,21 @@ let currentMaxGuesses = MAX_GUESSES;
 let isModalOpen = false;
 let previousFocus = null;
 let gameStateVersion = 0;
-let currentStatusMessage = "Type a five-letter word and press ENTER.";
-let currentStatusHtml = "";
-let isStatusDanger = false;
-let currentHintHtml = "";
+let currentInlineHtml = "";
 let isLoadingHint = false;
+let current24HourPlayCount = 0;
+let hasCountedCurrentGame = false;
+let revealedHintIndices = [];
+let revealedCorrectIndices = new Set();
+let activeModalCleanup = null;
+let activeModal = null;
 const keyStates = new Map();
 const hintCache = new Map();
+
+function getWebpageVersion() {
+  const meta = document.querySelector('meta[name="webpage-version"]');
+  return meta?.content || "";
+}
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = WORDS_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -78,18 +105,18 @@ function parseWordsPayload(payload) {
   }
 
   return entries
-    .filter((entry) => entry && typeof entry.word === "string" && typeof entry.definition === "string")
+    .filter((entry) => entry && typeof entry.word === "string")
     .map((entry) => ({
       word: entry.word.trim().toUpperCase(),
-      definition: entry.definition.trim(),
+      definition: typeof entry.definition === "string" ? entry.definition.trim() : "",
     }))
-    .filter((entry) => /^[A-Z]{5}$/.test(entry.word) && entry.definition);
+    .filter((entry) => /^[A-Z]{5}$/.test(entry.word));
 }
 
 async function loadWordsEntries(options = {}) {
-  const { cacheBust = false } = options;
-  const wordsUrl = cacheBust
-    ? `${WORDS_URL}?v=${Math.floor(Date.now() / 1000)}`
+  const { version = "" } = options;
+  const wordsUrl = version
+    ? `${WORDS_URL}?v=${encodeURIComponent(version)}`
     : WORDS_URL;
   const response = await fetchWithTimeout(wordsUrl);
   if (!response.ok) {
@@ -171,6 +198,60 @@ function readGuessCountStorage() {
   }
 }
 
+function isSameLocalDay(timestamp, now = Date.now()) {
+  const eventDate = new Date(timestamp);
+  const currentDate = new Date(now);
+
+  return eventDate.getFullYear() === currentDate.getFullYear()
+    && eventDate.getMonth() === currentDate.getMonth()
+    && eventDate.getDate() === currentDate.getDate();
+}
+
+function prunePlayEvents(events, now = Date.now()) {
+  return events.filter((timestamp) =>
+    Number.isInteger(timestamp) && timestamp <= now && isSameLocalDay(timestamp, now),
+  );
+}
+
+function readPlayEventsStorage() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PLAY_EVENTS_STORAGE_KEY) || "[]");
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return prunePlayEvents(parsed);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+function writePlayEventsStorage(events) {
+  try {
+    localStorage.setItem(PLAY_EVENTS_STORAGE_KEY, JSON.stringify(events));
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function refresh24HourPlayCount() {
+  const events = readPlayEventsStorage();
+  current24HourPlayCount = events.length;
+  writePlayEventsStorage(events);
+  return current24HourPlayCount;
+}
+
+function recordPlayEvent() {
+  const now = Date.now();
+  const events = prunePlayEvents(readPlayEventsStorage(), now);
+  events.push(now);
+  current24HourPlayCount = events.length;
+  writePlayEventsStorage(events);
+  hasCountedCurrentGame = true;
+  return current24HourPlayCount;
+}
+
 function writeGuessCountCookie(value) {
   document.cookie = `${GUESS_COUNT_COOKIE}=${value}; max-age=31536000; path=/; SameSite=Lax`;
 }
@@ -200,23 +281,7 @@ function escapeHtml(value) {
 }
 
 function renderMessages() {
-  const hasHint = Boolean(currentHintHtml);
-
-  if (currentHintHtml) {
-    hintMessage.innerHTML = currentHintHtml;
-    hintMessage.classList.remove("is-hidden");
-  } else {
-    hintMessage.innerHTML = "";
-    hintMessage.classList.add("is-hidden");
-  }
-
-  message.classList.toggle("message-danger", isStatusDanger);
-  const statusMarkup = currentStatusHtml || escapeHtml(currentStatusMessage);
-  const hasStatus = Boolean(statusMarkup);
-  messageSeparator.classList.toggle("is-hidden", !(hasHint && hasStatus));
-  message.innerHTML = isStatusDanger
-    ? `<strong>${statusMarkup}</strong>`
-    : statusMarkup;
+  message.innerHTML = currentInlineHtml;
 }
 
 function setControlsDisabled(disabled) {
@@ -240,10 +305,6 @@ function pickNextWord() {
   const word = unplayedWords[Math.floor(Math.random() * unplayedWords.length)];
   writePlayedWordsCookie([...playedWords, word]);
   return word;
-}
-
-async function isAllowedGuess(word) {
-  return dictionarySet.has(word);
 }
 
 function initializeBoard() {
@@ -290,53 +351,83 @@ function initializeKeyboard() {
   });
 }
 
-function clearHint() {
-  currentHintHtml = "";
+function setInlineMessage(html = "") {
+  currentInlineHtml = html;
+  renderMessages();
+}
+
+function setInlineText(text, options = {}) {
+  const { italic = false } = options;
+  setInlineMessage(italic ? `<em>${escapeHtml(text)}</em>` : escapeHtml(text));
+}
+
+function revealFreeLetter(index) {
+  const letter = secretWord[index];
+
+  if (statePriority("correct") > statePriority(keyStates.get(letter))) {
+    keyStates.set(letter, "correct");
+    const key = keyboard.querySelector(`[data-key="${letter}"]`);
+    if (key) {
+      key.classList.remove("correct", "present", "absent");
+      key.classList.add("correct");
+    }
+  }
+
+  refreshCurrentRow();
+}
+
+function getKnownLetterCount() {
+  let count = 0;
+
+  keyStates.forEach((state) => {
+    if (state === "correct" || state === "present") {
+      count += 1;
+    }
+  });
+
+  return count;
+}
+
+function getRemainingFreeHintCount() {
+  return Math.max(
+    0,
+    WORD_LENGTH - 1 - getKnownLetterCount(),
+  );
 }
 
 function setHint(definition) {
   if (!definition) {
-    currentHintHtml = "<em>No hints this time. You're own your own.</em>";
-    renderMessages();
+    if (getRemainingFreeHintCount() <= 0) {
+      setInlineMessage("<em>You only need one more letter!</em>");
+      return;
+    }
+
+    const availableIndices = [0, 1, 2, 3, 4]
+      .filter((index) => !revealedHintIndices.includes(index))
+      .filter((index) => !revealedCorrectIndices.has(index));
+    const index = availableIndices.length > 0
+      ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
+      : Math.floor(Math.random() * WORD_LENGTH);
+
+    if (!revealedHintIndices.includes(index)) {
+      revealedHintIndices.push(index);
+    }
+
+    revealFreeLetter(index);
+    setInlineMessage(`<em>The word contains an "${escapeHtml(secretWord[index])}".</em>`);
     return;
   }
 
-  currentHintHtml = `<em>${escapeHtml(definition)}</em>`;
-  renderMessages();
-}
-
-function setMessage(text) {
-  currentStatusMessage = text;
-  currentStatusHtml = "";
-  isStatusDanger = text === "1 guess remaining.";
-  renderMessages();
-}
-
-function setMessageHtml(html, text) {
-  currentStatusHtml = html;
-  currentStatusMessage = text;
-  isStatusDanger = text === "1 guess remaining.";
-  renderMessages();
-}
-
-function getSolvedMessage(guessNumber) {
-  if (guessNumber === 1) {
-    return "You solved the puzzle in one guess! INCONCEIVABLE!";
-  }
-
-  if (guessNumber === 2 && currentMaxGuesses >= 3) {
-    return "You solved the puzzle in 2 guesses!";
-  }
-
-  if (guessNumber === currentMaxGuesses) {
-    return "You solved it; but only just!";
-  }
-
-  return `You solved the puzzle in ${guessNumber} guesses.`;
+  setInlineMessage(`<em>${escapeHtml(definition)}</em>`);
 }
 
 async function handleHintRequest() {
   if (!dictionaryReady || isLoadingHint) {
+    return;
+  }
+
+  if (currentRow === 0) {
+    setInlineText("Type a 5 letter word to get started.", { italic: true });
     return;
   }
 
@@ -485,15 +576,18 @@ function updateKeyboard(guess, scores) {
 
 async function submitGuess() {
   if (currentGuess.length !== WORD_LENGTH) {
-    setMessage("Your guess needs five letters.");
     return;
   }
 
   const submissionVersion = gameStateVersion;
   isCheckingGuess = true;
-  setMessage("Checking word.");
+  const isTestWinWord = currentGuess === TEST_WIN_WORD;
+  const isTestLoseWord = currentGuess === TEST_LOSE_WORD;
+  const isTestMessageWord = currentGuess === TEST_MESSAGE_WORD;
 
-  const allowedGuess = await isAllowedGuess(currentGuess);
+  const allowedGuess = (isTestWinWord || isTestLoseWord || isTestMessageWord)
+    ? true
+    : dictionarySet.has(currentGuess);
   if (submissionVersion !== gameStateVersion) {
     return;
   }
@@ -501,16 +595,25 @@ async function submitGuess() {
   isCheckingGuess = false;
 
   if (!allowedGuess) {
-    setMessageHtml(
-      `<em>${escapeHtml(currentGuess)}</em> is not in the dictionary.`,
-      `${currentGuess} is not in the dictionary.`,
-    );
+    setInlineMessage(`<em>${escapeHtml(currentGuess)}</em> is not in the dictionary.`);
+    updateActiveTile();
+    return;
+  }
+
+  if (isTestMessageWord) {
+    setInlineText(TEST_MESSAGE_TEXT);
     updateActiveTile();
     return;
   }
 
   const guess = currentGuess;
-  const scores = scoreGuess(guess, secretWord);
+  const answer = isTestWinWord ? guess : secretWord;
+  const scores = scoreGuess(guess, answer);
+  scores.forEach((state, index) => {
+    if (state === "correct") {
+      revealedCorrectIndices.add(index);
+    }
+  });
   const row = tileRows[currentRow];
   isRevealing = true;
   updateActiveTile();
@@ -531,12 +634,30 @@ async function submitGuess() {
 
   updateKeyboard(guess, scores);
 
-  if (guess === secretWord) {
+  if (guess === answer) {
+    if (!hasCountedCurrentGame) {
+      recordPlayEvent();
+    }
     gameOver = true;
     setTimeout(() => {
       isRevealing = false;
-      clearHint();
-      setMessage(getSolvedMessage(currentRow + 1));
+      setInlineMessage();
+      openWinModal(secretWord, () => {
+        resetGame();
+      });
+      updateActiveTile();
+    }, 900);
+    return;
+  }
+
+  if (isTestLoseWord) {
+    gameOver = true;
+    setTimeout(() => {
+      isRevealing = false;
+      setInlineMessage();
+      openLoseModal(secretWord, () => {
+        resetGame();
+      });
       updateActiveTile();
     }, 900);
     return;
@@ -544,12 +665,16 @@ async function submitGuess() {
 
   currentRow += 1;
   currentGuess = "";
+  setInlineMessage();
 
   if (currentRow === currentMaxGuesses) {
     gameOver = true;
     setTimeout(() => {
       isRevealing = false;
-      setMessage(`Out of guesses. The word was ${secretWord}.`);
+      setInlineMessage();
+      openLoseModal(secretWord, () => {
+        resetGame();
+      });
       updateActiveTile();
     }, 900);
     return;
@@ -557,17 +682,14 @@ async function submitGuess() {
 
   setTimeout(() => {
     isRevealing = false;
-    const guessesLeft = currentMaxGuesses - currentRow;
-    setMessage(`${guessesLeft} ${guessesLeft === 1 ? "guess" : "guesses"} remaining.`);
     updateActiveTile();
   }, 900);
 }
 
 async function resetGame(options = {}) {
   const {
-    reloadWords = false,
-    selectingMessage = "Choosing puzzle word.",
-    readyMessage = "Type a five-letter word and press ENTER.",
+    selectingMessage = "",
+    readyMessage = "",
   } = options;
 
   gameStateVersion += 1;
@@ -579,25 +701,17 @@ async function resetGame(options = {}) {
   isRevealing = false;
   isCheckingGuess = false;
   isLoadingHint = false;
+  hasCountedCurrentGame = false;
+  revealedHintIndices = [];
+  revealedCorrectIndices = new Set();
   keyStates.clear();
-  clearHint();
+  setInlineMessage();
   hintButton.disabled = false;
   dictionaryReady = false;
   setControlsDisabled(true);
-  setMessage(selectingMessage);
+  setInlineText(selectingMessage);
   initializeBoard();
   initializeKeyboard();
-
-  if (reloadWords) {
-    try {
-      setMessage("Reloading words.");
-      await loadWordsEntries({ cacheBust: true });
-      setMessage(selectingMessage);
-    } catch (error) {
-      console.error(error);
-      setMessage("Unable to reload words. Using current word list.");
-    }
-  }
 
   secretWord = pickNextWord();
 
@@ -608,7 +722,7 @@ async function resetGame(options = {}) {
   dictionaryReady = true;
   setControlsDisabled(false);
   if (readyMessage) {
-    setMessage(readyMessage);
+    setInlineText(readyMessage);
   }
   updateActiveTile();
 }
@@ -625,10 +739,22 @@ function applyGuessCountChange(nextGuessCount) {
   resetGame();
 }
 
-function closeConfirmModal(restoreFocus = true) {
+function closeModal(options = {}) {
+  const { restoreFocus = true } = options;
+
   isModalOpen = false;
-  confirmModal.classList.remove("is-open");
-  confirmModal.setAttribute("aria-hidden", "true");
+
+  if (activeModal) {
+    activeModal.classList.remove("is-open");
+    activeModal.setAttribute("aria-hidden", "true");
+  }
+
+  if (activeModalCleanup) {
+    activeModalCleanup();
+    activeModalCleanup = null;
+  }
+
+  activeModal = null;
 
   if (restoreFocus && previousFocus && typeof previousFocus.focus === "function") {
     previousFocus.focus();
@@ -641,56 +767,163 @@ function closeConfirmModal(restoreFocus = true) {
   previousFocus = null;
 }
 
-function openConfirmModal(onConfirm) {
+function openModal({
+  modal,
+  initialFocus,
+  bindings = [],
+  onEscape,
+  onEnter,
+}) {
   if (isModalOpen) {
     return;
   }
 
   isModalOpen = true;
+  activeModal = modal;
   previousFocus = document.activeElement;
-  confirmModal.classList.add("is-open");
-  confirmModal.setAttribute("aria-hidden", "false");
-
-  const handleCancel = () => {
-    cleanup();
-    closeConfirmModal();
-  };
-
-  const handleConfirm = () => {
-    cleanup();
-    closeConfirmModal(false);
-    onConfirm();
-  };
+  modal.classList.add("is-open");
+  modal.setAttribute("aria-hidden", "false");
 
   const handleKeydown = (event) => {
-    if (event.key === "Escape") {
-      handleCancel();
+    if (event.key === "Escape" && onEscape) {
+      onEscape();
+      return;
+    }
+
+    if (event.key === "Enter" && onEnter) {
+      onEnter();
     }
   };
 
-  const cleanup = () => {
-    confirmCancelButton.removeEventListener("click", handleCancel);
-    confirmAcceptButton.removeEventListener("click", handleConfirm);
-    confirmModalBackdrop.removeEventListener("click", handleCancel);
+  bindings.forEach(({ element, event, handler }) => {
+    element.addEventListener(event, handler);
+  });
+  document.addEventListener("keydown", handleKeydown);
+
+  activeModalCleanup = () => {
+    bindings.forEach(({ element, event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
     document.removeEventListener("keydown", handleKeydown);
   };
 
-  confirmCancelButton.addEventListener("click", handleCancel);
-  confirmAcceptButton.addEventListener("click", handleConfirm);
-  confirmModalBackdrop.addEventListener("click", handleCancel);
-  document.addEventListener("keydown", handleKeydown);
-  confirmAcceptButton.focus();
+  if (initialFocus) {
+    initialFocus.focus();
+  }
+}
+
+function openSettingsModal() {
+  guessCountSelect.value = String(currentMaxGuesses);
+
+  const handleClose = () => {
+    closeModal();
+  };
+
+  openModal({
+    modal: settingsModal,
+    initialFocus: guessCountSelect,
+    bindings: [
+      { element: settingsModalBackdrop, event: "click", handler: handleClose },
+      { element: settingsCloseButton, event: "click", handler: handleClose },
+    ],
+    onEscape: handleClose,
+  });
+}
+
+function openConfirmModal(onConfirm) {
+  const handleCancel = () => {
+    closeModal();
+  };
+
+  const handleConfirm = () => {
+    closeModal({ restoreFocus: false });
+    onConfirm();
+  };
+
+  openModal({
+    modal: confirmModal,
+    initialFocus: confirmAcceptButton,
+    bindings: [
+      { element: confirmCancelButton, event: "click", handler: handleCancel },
+      { element: confirmAcceptButton, event: "click", handler: handleConfirm },
+      { element: confirmModalBackdrop, event: "click", handler: handleCancel },
+    ],
+    onEscape: handleCancel,
+  });
+}
+
+function openRevealModal(word, onAcknowledge) {
+  revealModalText.textContent = word ? word : "";
+
+  const handleAcknowledge = () => {
+    closeModal({ restoreFocus: false });
+    onAcknowledge();
+  };
+
+  openModal({
+    modal: revealModal,
+    initialFocus: revealOkButton,
+    bindings: [
+      { element: revealOkButton, event: "click", handler: handleAcknowledge },
+      { element: revealModalBackdrop, event: "click", handler: handleAcknowledge },
+    ],
+    onEscape: handleAcknowledge,
+    onEnter: handleAcknowledge,
+  });
+}
+
+function openWinModal(word, onNewGame) {
+  winModalText.textContent = word ? `The word was ${word}.` : "";
+
+  const handleNewGame = () => {
+    closeModal({ restoreFocus: false });
+    onNewGame();
+  };
+
+  openModal({
+    modal: winModal,
+    initialFocus: winNewGameButton,
+    bindings: [
+      { element: winNewGameButton, event: "click", handler: handleNewGame },
+      { element: winModalBackdrop, event: "click", handler: handleNewGame },
+    ],
+    onEscape: handleNewGame,
+    onEnter: handleNewGame,
+  });
+}
+
+function openLoseModal(word, onNewGame) {
+  loseModalText.textContent = word ? `The word was ${word}.` : "";
+
+  const handleNewGame = () => {
+    closeModal({ restoreFocus: false });
+    onNewGame();
+  };
+
+  openModal({
+    modal: loseModal,
+    initialFocus: loseNewGameButton,
+    bindings: [
+      { element: loseNewGameButton, event: "click", handler: handleNewGame },
+      { element: loseModalBackdrop, event: "click", handler: handleNewGame },
+    ],
+    onEscape: handleNewGame,
+    onEnter: handleNewGame,
+  });
 }
 
 function handleStartNewGame() {
   if (hasInProgressGame()) {
+    const abandonedWord = secretWord;
     openConfirmModal(() => {
-      resetGame({ reloadWords: true });
+      openRevealModal(`The word was ${abandonedWord}.`, () => {
+        resetGame();
+      });
     });
     return;
   }
 
-  resetGame({ reloadWords: true });
+  resetGame();
 }
 
 document.addEventListener("keydown", (event) => {
@@ -719,6 +952,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 newGameButton.addEventListener("click", handleStartNewGame);
+settingsButton.addEventListener("click", openSettingsModal);
 hintButton.addEventListener("click", handleHintRequest);
 enterKeyButton.addEventListener("click", () => handleKeyPress("ENTER"));
 backspaceKeyButton.addEventListener("click", () => handleKeyPress("BACK"));
@@ -726,8 +960,11 @@ guessCountSelect.addEventListener("change", () => {
   const nextGuessCount = Number(guessCountSelect.value);
 
   if (nextGuessCount === currentMaxGuesses) {
+    closeModal();
     return;
   }
+
+  closeModal({ restoreFocus: false });
 
   if (hasInProgressGame()) {
     guessCountSelect.value = String(currentMaxGuesses);
@@ -737,20 +974,20 @@ guessCountSelect.addEventListener("change", () => {
     return;
   }
 
-applyGuessCountChange(nextGuessCount);
+  applyGuessCountChange(nextGuessCount);
 });
 
 async function initializeGame() {
   initializeGuessCountSetting();
+  refresh24HourPlayCount();
   initializeBoard();
   initializeKeyboard();
   setControlsDisabled(true);
-  setMessage("Loading words.");
-  await loadWordsEntries();
+  await loadWordsEntries({ version: getWebpageVersion() });
   await resetGame();
 }
 
 initializeGame().catch((error) => {
   console.error(error);
-  setMessage("Unable to load words.");
+  setInlineText("Unable to load words.");
 });
