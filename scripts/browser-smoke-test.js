@@ -349,7 +349,7 @@ async function runSmokeChecks() {
     assert(raceCheck.isCheckingGuess === false, "Race check left guess validation stuck");
 
     await session.evaluate(`(() => {
-      const forcedWord = dictionary[0];
+      const forcedWord = answerWords[0];
       secretWord = forcedWord;
       currentGuess = forcedWord;
       refreshCurrentRow();
@@ -375,7 +375,7 @@ async function runSmokeChecks() {
     await session.evaluate(`winNewGameButton.click()`);
     await sleep(250);
     await session.evaluate(`(() => {
-      const guess = dictionary[0];
+      const guess = answerWords[0];
       guess.split("").forEach((letter) => {
         document.dispatchEvent(new KeyboardEvent("keydown", { key: letter, bubbles: true }));
       });

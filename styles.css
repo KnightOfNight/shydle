@@ -36,6 +36,15 @@ body {
   padding: 32px 20px 40px;
 }
 
+.asset-version {
+  margin: 18px 0 0;
+  color: rgba(24, 35, 15, 0.62);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
 .app-title {
   margin: 0 0 18px;
   color: #8b211a;

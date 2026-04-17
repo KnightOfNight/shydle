@@ -1,32 +1,32 @@
-# Wordle
+# SHYDLE
 
 Standalone Wordle-style browser game built with static HTML, CSS, and JavaScript.
 
 ## Current behavior
 
-- The game loads its runtime word database from `words.json`.
-- `words.json` contains category-based five-letter word lists.
-- The stored categories are `general`, `food`, `politics`, and `science`.
-- The game also builds a virtual `all` category from the union of those lists.
-- `all` is the default category unless the player chooses another one in Settings.
-- Answer selection comes from the currently selected category.
-- Typed guesses are validated against the full virtual `all` category, regardless of the selected answer category.
-- Answer selection is random, but the game remembers previously played answers in a cookie and avoids repeats until the full category pool has been used.
-- Hints are free-letter hints only; the game no longer uses dictionary definitions.
+- The game loads its runtime word database from `new.json`.
+- `new.json` contains two uppercase five-letter word lists: `answers` and `guesses`.
+- The game chooses the secret word at random from `answers`.
+- Typed guesses are considered valid if they appear in either `answers` or `guesses`.
+- Answer selection is random, but the game remembers previously played answers in a cookie and avoids repeats until the full answer pool has been used.
+- Hints are free-letter hints only.
+- Settings currently control only the number of guesses.
 
 ## Files
 
 - `index.html`: page structure
 - `styles.css`: game styling
 - `script.js`: game logic
-- `words.json`: runtime category-based word database
+- `new.json`: runtime answer/guess database
+- `words-answers.txt`: source word list used to build `new.json` answers
+- `words-guesses.txt`: source word list used to build `new.json` guesses
 - `simple-server.sh`: helper script to start, stop, and inspect the background local server
 - `scripts/browser-smoke-test.js`: browser smoke test
 - `scripts/browser-comprehensive-test.js`: broader browser regression test
 
 ## Run locally
 
-Serve the folder over HTTP. The game fetches `words.json`, so opening `index.html` directly from disk is not the intended path.
+Serve the folder over HTTP. The game fetches `new.json`, so opening `index.html` directly from disk is not the intended path.
 
 ### Option 1: Use the helper script
 
@@ -46,6 +46,12 @@ Check status with:
 
 ```bash
 ./simple-server.sh status
+```
+
+Restart it with:
+
+```bash
+./simple-server.sh restart
 ```
 
 Stop it with:

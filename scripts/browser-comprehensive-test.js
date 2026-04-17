@@ -218,12 +218,10 @@ async function resetToKnownDictionary(session, words, secret = null) {
   const entriesJson = JSON.stringify(words);
   const secretValue = secret ? JSON.stringify(secret) : "null";
   await session.evaluate(`(() => {
-    const entries = ${entriesJson};
-    categories = { general: entries.map((entry) => entry.word) };
-    refreshCategoryPools();
-    currentCategory = "all";
-    applyCategory(currentCategory, { fallbackToDefault: true });
-    document.cookie = "wordle_played_words=" + encodeURIComponent(JSON.stringify({ all: [] })) + "; path=/; SameSite=Lax";
+    const entries = ${entriesJson}.map((entry) => entry.word);
+    answerWords = [...entries];
+    validGuessSet = new Set(entries);
+    document.cookie = "wordle_played_words=" + encodeURIComponent(JSON.stringify([])) + "; path=/; SameSite=Lax";
     return resetGame().then(() => {
       if (${secretValue} !== null) {
         secretWord = ${secretValue};
@@ -244,47 +242,23 @@ async function runComprehensiveChecks() {
       message: document.querySelector("#message")?.textContent.trim(),
       dictionaryReady,
       currentMaxGuesses,
-      currentCategory,
       modalOpen: isModalOpen
     }))()`);
     assert(initial.title === "SHYDLE", `Unexpected title: ${initial.title}`);
     assert(initial.rows === initial.currentMaxGuesses, "Board rows do not match currentMaxGuesses on load");
     assert(initial.dictionaryReady === true, "Dictionary is not ready after initialization");
     assert(initial.message === "", `Expected empty message box on load, got ${initial.message}`);
-    assert(initial.currentCategory === "all", `Expected default category all, got ${initial.currentCategory}`);
     assert(initial.modalOpen === false, "Modal should not be open on initial load");
 
     await session.evaluate(`settingsButton.click()`);
     const settingsOpen = await session.evaluate(`(() => ({
       modalOpen: isModalOpen,
       settingsOpen: settingsModal.classList.contains("is-open"),
-      activeId: document.activeElement?.id,
-      categoryValue: categorySelect.value
+      activeId: document.activeElement?.id
     }))()`);
     assert(settingsOpen.modalOpen === true, "Settings button did not open the modal");
     assert(settingsOpen.settingsOpen === true, "Settings modal is not visibly open");
     assert(settingsOpen.activeId === "settings-close-button", `Expected Close Settings to be focused, got ${settingsOpen.activeId}`);
-    assert(settingsOpen.categoryValue === "all", `Expected all selected in settings, got ${settingsOpen.categoryValue}`);
-
-    await session.evaluate(`(() => {
-      settingsCloseButton.click();
-      settingsButton.click();
-      categorySelect.value = "science";
-      categorySelect.dispatchEvent(new Event("change", { bubbles: true }));
-    })()`);
-    await sleep(150);
-    const categoryApplied = await session.evaluate(`(() => ({
-      modalOpen: isModalOpen,
-      currentCategory,
-      categoryValue: categorySelect.value,
-      localValue: localStorage.getItem("wordle_category"),
-      cookie: document.cookie
-    }))()`);
-    assert(categoryApplied.modalOpen === false, "Settings modal should close after immediate category change");
-    assert(categoryApplied.currentCategory === "science", `Expected science category, got ${categoryApplied.currentCategory}`);
-    assert(categoryApplied.categoryValue === "science", `Expected science selector value, got ${categoryApplied.categoryValue}`);
-    assert(categoryApplied.localValue === "science", `Expected stored category science, got ${categoryApplied.localValue}`);
-    assert(categoryApplied.cookie.includes("wordle_category=science"), `Category cookie did not persist science: ${categoryApplied.cookie}`);
 
     await session.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
     await sleep(100);
@@ -614,14 +588,9 @@ async function runComprehensiveChecks() {
     assert(afterCancel.currentGuess === "AB", `Confirm cancel should preserve guess, got ${afterCancel.currentGuess}`);
 
     const nonRepeatingWords = await session.evaluate(`(() => {
-      categories = {
-        general: ["ALERT"],
-        science: ["ANGLE", "ATOMS"]
-      };
-      refreshCategoryPools();
-      currentCategory = "science";
-      applyCategory(currentCategory, { fallbackToDefault: true });
-      document.cookie = "wordle_played_words=" + encodeURIComponent(JSON.stringify({ science: [] })) + "; path=/; SameSite=Lax";
+      answerWords = ["ALERT", "ANGLE"];
+      validGuessSet = new Set(answerWords);
+      document.cookie = "wordle_played_words=" + encodeURIComponent(JSON.stringify([])) + "; path=/; SameSite=Lax";
       const first = pickNextWord();
       const second = pickNextWord();
       return { first, second };

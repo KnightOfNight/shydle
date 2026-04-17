@@ -67,6 +67,8 @@
           </div>
         </div>
       </section>
+
+      <p class="asset-version">Version __WEBPAGE_VERSION__</p>
     </main>
 
     <div
@@ -129,20 +131,8 @@
       <div class="modal-panel">
         <h2 id="settings-modal-title" class="modal-title">Settings</h2>
         <p id="settings-modal-text" class="modal-text">
-          Choose the category and number of guesses.
+          Choose the number of guesses.
         </p>
-        <div class="settings-field">
-          <label class="control-group" for="category-select">
-            <span class="control-label">Category</span>
-            <select id="category-select" class="control-input">
-              <option value="all" selected>All</option>
-              <option value="general">General</option>
-              <option value="food">Food</option>
-              <option value="politics">Politics</option>
-              <option value="science">Science</option>
-            </select>
-          </label>
-        </div>
         <div class="settings-field">
           <label class="control-group" for="guess-count">
             <span class="control-label">Guesses</span>

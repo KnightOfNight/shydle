@@ -9,6 +9,15 @@ PORT="${PORT:-8000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 VERB="${1:-}"
 
+get_webpage_version() {
+  local index_file="$SCRIPT_DIR/index.html"
+  if [[ ! -f "$index_file" ]]; then
+    return 1
+  fi
+
+  awk -F'"' '/meta name="webpage-version"/ {print $4; exit}' "$index_file"
+}
+
 get_local_ip() {
   local iface
   iface="$(route -n get default 2>/dev/null | awk '/interface: / {print $2; exit}')"
@@ -56,6 +65,15 @@ running_pid_from_file() {
 }
 
 print_addresses() {
+  local version
+  version="$(get_webpage_version 2>/dev/null || true)"
+
+  if [[ -n "$version" ]]; then
+    echo "Asset version: $version"
+  else
+    echo "Asset version: unavailable"
+  fi
+
   if [[ "$BIND_ADDRESS" == "0.0.0.0" ]]; then
     if LOCAL_IP="$(get_local_ip)"; then
       echo "Open locally: http://localhost:$PORT"
@@ -116,9 +134,20 @@ status_server() {
   return 1
 }
 
+restart_server() {
+  if running_pid_from_file >/dev/null; then
+    stop_server
+  fi
+
+  start_server
+}
+
 case "${VERB:-status}" in
   start)
     start_server
+    ;;
+  restart)
+    restart_server
     ;;
   stop)
     stop_server
@@ -127,7 +156,7 @@ case "${VERB:-status}" in
     status_server
     ;;
   *)
-    echo "Usage: ./simple-server.sh <start|stop|status>"
+    echo "Usage: ./simple-server.sh <start|stop|restart|status>"
     exit 1
     ;;
 esac

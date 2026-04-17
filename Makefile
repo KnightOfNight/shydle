@@ -4,7 +4,7 @@ NODE ?= /opt/homebrew/bin/node
 PYTHON ?= python3
 CHROME ?= /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
 WORDS_COUNT ?= 10000
-WEBPAGE_SOURCES = index.html.in script.js styles.css words.json
+WEBPAGE_SOURCES = index.html.in script.js styles.css new.json
 
 test-browser:
 	$(NODE) scripts/browser-smoke-test.js --python $(PYTHON) --chrome $(CHROME)

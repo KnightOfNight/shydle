@@ -3,12 +3,9 @@ const MAX_GUESSES = 5;
 const GUESS_COUNT_COOKIE = "wordle_guess_count";
 const GUESS_COUNT_STORAGE_KEY = "wordle_guess_count";
 const PLAYED_WORDS_COOKIE = "wordle_played_words";
-const CATEGORY_COOKIE = "wordle_category";
-const CATEGORY_STORAGE_KEY = "wordle_category";
 const PLAY_EVENTS_STORAGE_KEY = "wordle_play_events";
-const WORDS_URL = "./words.json";
+const WORDS_URL = "./new.json";
 const WORDS_FETCH_TIMEOUT_MS = 2000;
-const DEFAULT_CATEGORY = "all";
 const TEST_WIN_WORD = "HISHY";
 const TEST_LOSE_WORD = "BYSHY";
 const TEST_MESSAGE_WORD = "DESHY";
@@ -28,7 +25,6 @@ const message = document.getElementById("message");
 const newGameButton = document.getElementById("new-game-button");
 const settingsButton = document.getElementById("settings-button");
 const guessCountSelect = document.getElementById("guess-count");
-const categorySelect = document.getElementById("category-select");
 const settingsModal = document.getElementById("settings-modal");
 const settingsModalBackdrop = document.getElementById("settings-modal-backdrop");
 const settingsCloseButton = document.getElementById("settings-close-button");
@@ -55,12 +51,8 @@ let currentRow = 0;
 let gameOver = false;
 let isRevealing = false;
 let tileRows = [];
-let dictionary = [];
-let dictionarySet = new Set();
-let allWords = [];
-let allWordsSet = new Set();
-let categories = {};
-let currentCategory = DEFAULT_CATEGORY;
+let answerWords = [];
+let validGuessSet = new Set();
 let dictionaryReady = false;
 let isCheckingGuess = false;
 let currentMaxGuesses = MAX_GUESSES;
@@ -105,54 +97,30 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = WORDS_FETCH_TIMEO
 }
 
 function parseWordsPayload(payload) {
-  const categoryEntries = payload?.categories;
-  if (!categoryEntries || typeof categoryEntries !== "object" || Array.isArray(categoryEntries)) {
-    throw new Error("Words payload does not contain categories.");
+  const answers = Array.isArray(payload?.answers) ? payload.answers : null;
+  const guesses = Array.isArray(payload?.guesses) ? payload.guesses : null;
+  if (!answers || !guesses) {
+    throw new Error("Words payload must contain answers and guesses arrays.");
   }
 
-  const parsedCategories = {};
-  const seenWords = new Map();
-
-  Object.entries(categoryEntries).forEach(([name, entries]) => {
-    if (name === "all") {
-      return;
-    }
-
-    if (!Array.isArray(entries)) {
-      return;
-    }
-
-    const words = entries
+  const normalize = (entries) => [...new Set(
+    entries
       .filter((entry) => typeof entry === "string")
       .map((entry) => entry.trim().toUpperCase())
-      .filter((entry) => /^[A-Z]{5}$/.test(entry));
+      .filter((entry) => /^[A-Z]{5}$/.test(entry))
+  )];
 
-    const uniqueWords = [...new Set(words)];
-    uniqueWords.forEach((word) => {
-      if (seenWords.has(word)) {
-        throw new Error(`Word ${word} appears in both ${seenWords.get(word)} and ${name}.`);
-      }
-      seenWords.set(word, name);
-    });
+  const normalizedAnswers = normalize(answers);
+  const normalizedGuesses = normalize(guesses);
 
-    if (uniqueWords.length > 0) {
-      parsedCategories[name] = uniqueWords;
-    }
-  });
-
-  if (Object.keys(parsedCategories).length === 0) {
-    throw new Error("Words payload has no valid categories.");
+  if (normalizedAnswers.length === 0) {
+    throw new Error("Answers list is empty.");
   }
 
-  return parsedCategories;
-}
-
-function refreshCategoryPools() {
-  const categoryNames = Object.keys(categories).filter((name) => name !== "all");
-  const combinedWords = categoryNames.flatMap((name) => categories[name]);
-  categories.all = [...new Set(combinedWords)];
-  allWords = [...categories.all];
-  allWordsSet = new Set(allWords);
+  return {
+    answers: normalizedAnswers,
+    guesses: normalizedGuesses,
+  };
 }
 
 async function loadWordsEntries(options = {}) {
@@ -166,9 +134,9 @@ async function loadWordsEntries(options = {}) {
   }
 
   const payload = await response.json();
-  categories = parseWordsPayload(payload);
-  refreshCategoryPools();
-  applyCategory(currentCategory, { fallbackToDefault: true });
+  const parsed = parseWordsPayload(payload);
+  answerWords = parsed.answers;
+  validGuessSet = new Set([...parsed.answers, ...parsed.guesses]);
 }
 
 function readGuessCountCookie() {
@@ -199,34 +167,20 @@ function readPlayedWordsCookie() {
 
   try {
     const parsed = JSON.parse(decodeURIComponent(cookie.split("=")[1]));
-    if (Array.isArray(parsed)) {
-      return { [currentCategory]: parsed
-        .filter((word) => typeof word === "string" && /^[A-Z]{5}$/.test(word)) };
+    if (!Array.isArray(parsed)) {
+      return [];
     }
 
-    if (!parsed || typeof parsed !== "object") {
-      return {};
-    }
-
-    const result = {};
-    Object.entries(parsed).forEach(([category, words]) => {
-      if (!Array.isArray(words)) {
-        return;
-      }
-
-      result[category] = words
-        .filter((word) => typeof word === "string" && /^[A-Z]{5}$/.test(word));
-    });
-
-    return result;
+    return parsed
+      .filter((word) => typeof word === "string" && /^[A-Z]{5}$/.test(word));
   } catch (error) {
     console.error(error);
-    return {};
+    return [];
   }
 }
 
-function writePlayedWordsCookie(wordsByCategory) {
-  document.cookie = `${PLAYED_WORDS_COOKIE}=${encodeURIComponent(JSON.stringify(wordsByCategory))}; max-age=31536000; path=/; SameSite=Lax`;
+function writePlayedWordsCookie(words) {
+  document.cookie = `${PLAYED_WORDS_COOKIE}=${encodeURIComponent(JSON.stringify(words))}; max-age=31536000; path=/; SameSite=Lax`;
 }
 
 function readGuessCountStorage() {
@@ -309,45 +263,11 @@ function writeGuessCountStorage(value) {
   }
 }
 
-function readCategoryCookie() {
-  const cookie = document.cookie
-    .split("; ")
-    .find((entry) => entry.startsWith(`${CATEGORY_COOKIE}=`));
-
-  return cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
-}
-
-function writeCategoryCookie(value) {
-  document.cookie = `${CATEGORY_COOKIE}=${encodeURIComponent(value)}; max-age=31536000; path=/; SameSite=Lax`;
-}
-
-function readCategoryStorage() {
-  try {
-    return localStorage.getItem(CATEGORY_STORAGE_KEY);
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
-}
-
-function writeCategoryStorage(value) {
-  try {
-    localStorage.setItem(CATEGORY_STORAGE_KEY, value);
-  } catch (error) {
-    console.error(error);
-  }
-}
-
 function initializeGuessCountSetting() {
   const savedGuessCount = readGuessCountStorage() ?? readGuessCountCookie();
   const initialGuessCount = savedGuessCount ?? MAX_GUESSES;
   guessCountSelect.value = String(initialGuessCount);
   currentMaxGuesses = initialGuessCount;
-}
-
-function initializeCategorySetting() {
-  const savedCategory = readCategoryStorage() ?? readCategoryCookie();
-  applyCategory(savedCategory ?? DEFAULT_CATEGORY, { fallbackToDefault: true });
 }
 
 function escapeHtml(value) {
@@ -365,48 +285,24 @@ function renderMessages() {
 
 function setControlsDisabled(disabled) {
   guessCountSelect.disabled = disabled;
-  categorySelect.disabled = disabled;
-}
-
-function applyCategory(nextCategory, options = {}) {
-  const { fallbackToDefault = false } = options;
-  const categoryNames = Object.keys(categories);
-  let resolvedCategory = nextCategory;
-
-  if (!resolvedCategory || !categories[resolvedCategory]) {
-    resolvedCategory = fallbackToDefault
-      ? (categories[DEFAULT_CATEGORY] ? DEFAULT_CATEGORY : categoryNames[0])
-      : null;
-  }
-
-  if (!resolvedCategory || !categories[resolvedCategory]) {
-    throw new Error("No categories are available.");
-  }
-
-  currentCategory = resolvedCategory;
-  categorySelect.value = currentCategory;
-  dictionary = [...categories[currentCategory]];
-  dictionarySet = new Set(dictionary);
 }
 
 function pickNextWord() {
-  if (dictionary.length === 0) {
+  if (answerWords.length === 0) {
     throw new Error("No words are available.");
   }
 
-  const playedWordsByCategory = readPlayedWordsCookie();
-  let playedWords = (playedWordsByCategory[currentCategory] || [])
-    .filter((word) => dictionarySet.has(word));
-  let unplayedWords = dictionary.filter((word) => !playedWords.includes(word));
+  let playedWords = readPlayedWordsCookie()
+    .filter((word) => answerWords.includes(word));
+  let unplayedWords = answerWords.filter((word) => !playedWords.includes(word));
 
   if (unplayedWords.length === 0) {
     playedWords = [];
-    unplayedWords = [...dictionary];
+    unplayedWords = [...answerWords];
   }
 
   const word = unplayedWords[Math.floor(Math.random() * unplayedWords.length)];
-  playedWordsByCategory[currentCategory] = [...playedWords, word];
-  writePlayedWordsCookie(playedWordsByCategory);
+  writePlayedWordsCookie([...playedWords, word]);
   return word;
 }
 
@@ -491,6 +387,24 @@ function getKnownLetterCount() {
   return count;
 }
 
+function isLetterKnown(letter) {
+  const state = keyStates.get(letter);
+  return state === "correct" || state === "present";
+}
+
+function getKnownWordLetterCount() {
+  let count = 0;
+
+  for (let index = 0; index < WORD_LENGTH; index += 1) {
+    const letter = secretWord[index];
+    if (revealedCorrectIndices.has(index) || revealedHintIndices.includes(index) || isLetterKnown(letter)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
 function getRemainingFreeHintCount() {
   return Math.max(
     0,
@@ -499,17 +413,28 @@ function getRemainingFreeHintCount() {
 }
 
 function setHint() {
+  const availableIndices = [0, 1, 2, 3, 4]
+    .filter((index) => !revealedHintIndices.includes(index))
+    .filter((index) => !revealedCorrectIndices.has(index))
+    .filter((index) => !isLetterKnown(secretWord[index]));
+
+  if (availableIndices.length === 0) {
+    const knownWordLetterCount = getKnownWordLetterCount();
+    if (knownWordLetterCount >= WORD_LENGTH) {
+      setInlineMessage("<em>You already know all the letters!</em>");
+      return;
+    }
+
+    setInlineMessage("<em>You only need one more letter!</em>");
+    return;
+  }
+
   if (getRemainingFreeHintCount() <= 0) {
     setInlineMessage("<em>You only need one more letter!</em>");
     return;
   }
 
-  const availableIndices = [0, 1, 2, 3, 4]
-    .filter((index) => !revealedHintIndices.includes(index))
-    .filter((index) => !revealedCorrectIndices.has(index));
-  const index = availableIndices.length > 0
-    ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
-    : Math.floor(Math.random() * WORD_LENGTH);
+  const index = availableIndices[Math.floor(Math.random() * availableIndices.length)];
 
   if (!revealedHintIndices.includes(index)) {
     revealedHintIndices.push(index);
@@ -685,7 +610,7 @@ async function submitGuess() {
 
   const allowedGuess = (isTestWinWord || isTestLoseWord || isTestMessageWord)
     ? true
-    : allWordsSet.has(currentGuess);
+    : validGuessSet.has(currentGuess);
   if (submissionVersion !== gameStateVersion) {
     return;
   }
@@ -912,7 +837,6 @@ function openModal({
 
 function openSettingsModal() {
   guessCountSelect.value = String(currentMaxGuesses);
-  categorySelect.value = currentCategory;
 
   const handleClose = () => {
     closeModal();
@@ -1076,33 +1000,6 @@ guessCountSelect.addEventListener("change", () => {
   applyGuessCountChange(nextGuessCount);
 });
 
-categorySelect.addEventListener("change", () => {
-  const nextCategory = categorySelect.value;
-
-  if (nextCategory === currentCategory) {
-    closeModal();
-    return;
-  }
-
-  closeModal({ restoreFocus: false });
-
-  if (hasInProgressGame()) {
-    categorySelect.value = currentCategory;
-    openConfirmModal(() => {
-      applyCategory(nextCategory, { fallbackToDefault: true });
-      writeCategoryCookie(currentCategory);
-      writeCategoryStorage(currentCategory);
-      resetGame();
-    });
-    return;
-  }
-
-  applyCategory(nextCategory, { fallbackToDefault: true });
-  writeCategoryCookie(currentCategory);
-  writeCategoryStorage(currentCategory);
-  resetGame();
-});
-
 async function initializeGame() {
   initializeGuessCountSetting();
   refresh24HourPlayCount();
@@ -1110,9 +1007,6 @@ async function initializeGame() {
   initializeKeyboard();
   setControlsDisabled(true);
   await loadWordsEntries({ version: getWebpageVersion() });
-  initializeCategorySetting();
-  writeCategoryCookie(currentCategory);
-  writeCategoryStorage(currentCategory);
   await resetGame();
 }
 
