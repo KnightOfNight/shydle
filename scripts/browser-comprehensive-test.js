@@ -6,10 +6,6 @@ const os = require("node:os");
 const path = require("node:path");
 
 const HOST = "127.0.0.1";
-const SERVER_PORT = 8123;
-const DEBUG_PORT = 9222;
-const APP_URL = `http://${HOST}:${SERVER_PORT}/`;
-const REMOTE_BASE_URL = `http://${HOST}:${DEBUG_PORT}`;
 const SERVER_START_TIMEOUT_MS = 10_000;
 const CHROME_START_TIMEOUT_MS = 15_000;
 const PAGE_LOAD_WAIT_MS = 2_500;
@@ -20,6 +16,8 @@ function parseArgs(argv) {
   const options = {
     python: "python3",
     chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    serverPort: 8123,
+    debugPort: 9222,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -32,6 +30,18 @@ function parseArgs(argv) {
 
     if (token === "--chrome") {
       options.chrome = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (token === "--server-port") {
+      options.serverPort = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    if (token === "--debug-port") {
+      options.debugPort = Number(argv[index + 1]);
       index += 1;
     }
   }
@@ -108,9 +118,9 @@ function spawnLoggedProcess(command, args, options = {}) {
   return child;
 }
 
-async function createDevToolsSession(targetUrl) {
+async function createDevToolsSession(targetUrl, remoteBaseUrl) {
   const targetResponse = await fetch(
-    `${REMOTE_BASE_URL}/json/new?${encodeURIComponent(targetUrl)}`,
+    `${remoteBaseUrl}/json/new?${encodeURIComponent(targetUrl)}`,
     { method: "PUT" },
   );
 
@@ -230,8 +240,8 @@ async function resetToKnownDictionary(session, words, secret = null) {
   })()`);
 }
 
-async function runComprehensiveChecks() {
-  const session = await createDevToolsSession(APP_URL);
+async function runComprehensiveChecks(appUrl, remoteBaseUrl) {
+  const session = await createDevToolsSession(appUrl, remoteBaseUrl);
 
   try {
     await waitForReady(session);
@@ -239,7 +249,6 @@ async function runComprehensiveChecks() {
     const initial = await session.evaluate(`(() => ({
       title: document.querySelector(".app-title")?.textContent.trim(),
       rows: document.querySelectorAll(".board-row").length,
-      message: document.querySelector("#message")?.textContent.trim(),
       dictionaryReady,
       currentMaxGuesses,
       modalOpen: isModalOpen
@@ -247,7 +256,6 @@ async function runComprehensiveChecks() {
     assert(initial.title === "SHYDLE", `Unexpected title: ${initial.title}`);
     assert(initial.rows === initial.currentMaxGuesses, "Board rows do not match currentMaxGuesses on load");
     assert(initial.dictionaryReady === true, "Dictionary is not ready after initialization");
-    assert(initial.message === "", `Expected empty message box on load, got ${initial.message}`);
     assert(initial.modalOpen === false, "Modal should not be open on initial load");
 
     await session.evaluate(`settingsButton.click()`);
@@ -314,32 +322,20 @@ async function runComprehensiveChecks() {
     await session.evaluate(`(() => {
       currentGuess = "AB";
       refreshCurrentRow();
-      setInlineMessage();
       handleKeyPress("ENTER");
     })()`);
     const shortEnterIgnored = await session.evaluate(`(() => ({
       currentGuess,
-      currentRow,
-      message: document.querySelector("#message")?.textContent.trim()
+      currentRow
     }))()`);
     assert(shortEnterIgnored.currentGuess === "AB", `Short ENTER mutated currentGuess: ${shortEnterIgnored.currentGuess}`);
     assert(shortEnterIgnored.currentRow === 0, `Short ENTER advanced row unexpectedly: ${shortEnterIgnored.currentRow}`);
-    assert(shortEnterIgnored.message === "", `Short ENTER should not write a message, got ${shortEnterIgnored.message}`);
 
     await session.evaluate(`(() => {
       currentGuess = "";
       refreshCurrentRow();
       handleHintRequest();
     })()`);
-    const firstRowHint = await session.evaluate(`(() => ({
-      html: document.querySelector("#message")?.innerHTML.trim(),
-      text: document.querySelector("#message")?.textContent.trim()
-    }))()`);
-    assert(
-      firstRowHint.html === "<em>Type a 5 letter word to get started.</em>",
-      `Unexpected first-row hint html: ${firstRowHint.html}`,
-    );
-    assert(firstRowHint.text === "Type a 5 letter word to get started.", `Unexpected first-row hint text: ${firstRowHint.text}`);
 
     await resetToKnownDictionary(session, [
       { word: "CRANE", definition: "" },
@@ -351,12 +347,8 @@ async function runComprehensiveChecks() {
       submitGuess();
     })()`);
     await sleep(REVEAL_WAIT_MS);
-    const clearedAfterAdvance = await session.evaluate(`(() => ({
-      currentRow,
-      message: document.querySelector("#message")?.textContent.trim()
-    }))()`);
+    const clearedAfterAdvance = await session.evaluate(`(() => ({ currentRow }))()`);
     assert(clearedAfterAdvance.currentRow === 1, `Expected move to row 1, got ${clearedAfterAdvance.currentRow}`);
-    assert(clearedAfterAdvance.message === "", `Expected message to clear after leaving first row, got ${clearedAfterAdvance.message}`);
 
     await resetToKnownDictionary(session, [
       { word: "ABACK", definition: "Definition test text." },
@@ -369,26 +361,15 @@ async function runComprehensiveChecks() {
       revealedCorrectIndices = new Set();
       keyStates.clear();
       initializeKeyboard();
-      setInlineMessage();
       handleHintRequest();
     })()`);
     const hintedWordStillUsesLetterHint = await session.evaluate(`(() => ({
-      html: document.querySelector("#message")?.innerHTML.trim(),
-      text: document.querySelector("#message")?.textContent.trim(),
-      correctKeys: Array.from(document.querySelectorAll(".key.correct")).map((key) => key.dataset.key),
+      presentKeys: Array.from(document.querySelectorAll(".key.present")).map((key) => key.dataset.key),
       revealedHintCount: revealedHintIndices.length
     }))()`);
     assert(
-      /^<em>The word contains an "[A-Z]"\.<\/em>$/.test(hintedWordStillUsesLetterHint.html),
-      `Unexpected hint html for defined word: ${hintedWordStillUsesLetterHint.html}`,
-    );
-    assert(
-      /^The word contains an "[A-Z]"\.$/.test(hintedWordStillUsesLetterHint.text),
-      `Unexpected hint text for defined word: ${hintedWordStillUsesLetterHint.text}`,
-    );
-    assert(
-      hintedWordStillUsesLetterHint.correctKeys.length === 1,
-      `Expected one green keyboard key for defined-word hint, got ${hintedWordStillUsesLetterHint.correctKeys.length}`,
+      hintedWordStillUsesLetterHint.presentKeys.length === 1,
+      `Expected one yellow keyboard key for defined-word hint, got ${hintedWordStillUsesLetterHint.presentKeys.length}`,
     );
     assert(
       hintedWordStillUsesLetterHint.revealedHintCount === 1,
@@ -406,76 +387,63 @@ async function runComprehensiveChecks() {
       revealedCorrectIndices = new Set();
       keyStates.clear();
       initializeKeyboard();
-      setInlineMessage();
       handleHintRequest();
     })()`);
     const freeLetterHint = await session.evaluate(`(() => ({
-      html: document.querySelector("#message")?.innerHTML.trim(),
-      text: document.querySelector("#message")?.textContent.trim(),
-      correctKeys: Array.from(document.querySelectorAll(".key.correct")).map((key) => key.dataset.key),
+      presentKeys: Array.from(document.querySelectorAll(".key.present")).map((key) => key.dataset.key),
       revealedHintCount: revealedHintIndices.length
     }))()`);
-    assert(
-      /^<em>The word contains an "[A-Z]"\.<\/em>$/.test(freeLetterHint.html),
-      `Unexpected free-letter hint html: ${freeLetterHint.html}`,
-    );
-    assert(
-      /^The word contains an "[A-Z]"\.$/.test(freeLetterHint.text),
-      `Unexpected free-letter hint text: ${freeLetterHint.text}`,
-    );
-    assert(freeLetterHint.correctKeys.length === 1, `Expected one green keyboard key from free-letter hint, got ${freeLetterHint.correctKeys.length}`);
+    assert(freeLetterHint.presentKeys.length === 1, `Expected one yellow keyboard key from free-letter hint, got ${freeLetterHint.presentKeys.length}`);
     assert(freeLetterHint.revealedHintCount === 1, `Expected one recorded free-letter hint, got ${freeLetterHint.revealedHintCount}`);
 
     await session.evaluate(`(() => {
       keyStates.clear();
       [["C", "correct"], ["R", "correct"], ["A", "correct"], ["N", "present"]]
         .forEach(([letter, state]) => keyStates.set(letter, state));
-      setInlineMessage();
       handleHintRequest();
     })()`);
-    const noMoreFreeLetters = await session.evaluate(`document.querySelector("#message")?.innerHTML.trim()`);
+    const noMoreFreeLetters = await session.evaluate(`(() => ({
+      modalOpen: isModalOpen,
+      modalVisible: document.querySelector("#no-more-hints-modal")?.classList.contains("is-open"),
+      title: document.querySelector("#no-more-hints-modal-title")?.textContent.trim(),
+      text: document.querySelector("#no-more-hints-modal-text")?.textContent.trim()
+    }))()`);
     assert(
-      noMoreFreeLetters === "<em>You only need one more letter!</em>",
-      `Unexpected no-more-free-letters message: ${noMoreFreeLetters}`,
+      noMoreFreeLetters.modalOpen === true && noMoreFreeLetters.modalVisible === true,
+      "Expected no-more-hints modal to open",
     );
+    assert(noMoreFreeLetters.title === "No more hints!", `Unexpected no-more-hints title: ${noMoreFreeLetters.title}`);
+    assert(
+      noMoreFreeLetters.text === "I've told you all I can. It's up to you now!",
+      `Unexpected no-more-hints text: ${noMoreFreeLetters.text}`,
+    );
+    await session.evaluate(`noMoreHintsCloseButton.click()`);
+    await sleep(100);
 
     await resetToKnownDictionary(session, [
       { word: "CRANE", definition: "" },
     ], "CRANE");
     await session.evaluate(`(() => {
-      setInlineMessage();
       currentGuess = "QQQQQ";
       refreshCurrentRow();
       submitGuess();
     })()`);
     const invalidGuess = await session.evaluate(`(() => ({
-      html: document.querySelector("#message")?.innerHTML.trim(),
       currentRow,
-      currentGuess
+      currentGuess,
+      invalidTiles: Array.from(document.querySelectorAll(".board-row:first-child .tile.invalid")).length
     }))()`);
-    assert(
-      invalidGuess.html === "<em>QQQQQ</em> is not in the dictionary.",
-      `Unexpected invalid-guess html: ${invalidGuess.html}`,
-    );
     assert(invalidGuess.currentRow === 0, `Invalid guess advanced row unexpectedly: ${invalidGuess.currentRow}`);
     assert(invalidGuess.currentGuess === "QQQQQ", `Invalid guess should leave the guess in place, got ${invalidGuess.currentGuess}`);
+    assert(invalidGuess.invalidTiles === 5, `Expected whole row to be marked invalid, got ${invalidGuess.invalidTiles} tiles`);
 
-    await session.evaluate(`(() => {
-      currentGuess = "DESHY";
-      refreshCurrentRow();
-      submitGuess();
-    })()`);
-    const testMessage = await session.evaluate(`(() => ({
-      text: document.querySelector("#message")?.textContent.trim(),
-      currentRow,
-      currentGuess
+    await session.evaluate(`handleKeyPress("BACK")`);
+    const invalidGuessAfterBackspace = await session.evaluate(`(() => ({
+      currentGuess,
+      invalidTiles: Array.from(document.querySelectorAll(".board-row:first-child .tile.invalid")).length
     }))()`);
-    assert(
-      testMessage.text === "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.",
-      `Unexpected DESHY message text: ${testMessage.text}`,
-    );
-    assert(testMessage.currentRow === 0, `DESHY should not advance row, got ${testMessage.currentRow}`);
-    assert(testMessage.currentGuess === "DESHY", `DESHY should leave currentGuess in place, got ${testMessage.currentGuess}`);
+    assert(invalidGuessAfterBackspace.currentGuess === "QQQQ", `Expected backspace to trim guess after invalid row, got ${invalidGuessAfterBackspace.currentGuess}`);
+    assert(invalidGuessAfterBackspace.invalidTiles === 0, `Expected invalid row styling to clear after backspace, got ${invalidGuessAfterBackspace.invalidTiles}`);
 
     await session.evaluate(`localStorage.removeItem("wordle_play_events"); refresh24HourPlayCount();`);
     await resetToKnownDictionary(session, [
@@ -600,6 +568,27 @@ async function runComprehensiveChecks() {
       `Expected pickNextWord to avoid repeats until exhaustion, got ${nonRepeatingWords.first} then ${nonRepeatingWords.second}`,
     );
 
+    await resetToKnownDictionary(session, [
+      { word: "CRANE", definition: "" },
+    ], "CRANE");
+    await session.evaluate(`(() => {
+      currentGuess = "NOSHY";
+      refreshCurrentRow();
+      submitGuess();
+    })()`);
+    const errorScreenState = await session.evaluate(`(() => ({
+      modalOpen: isModalOpen,
+      errorOpen: errorScreen.classList.contains("is-open"),
+      title: document.querySelector("#error-screen-title")?.textContent.trim(),
+      text: document.querySelector("#error-screen-text")?.textContent.trim(),
+      button: document.querySelector("#error-screen-reload-button")?.textContent.trim()
+    }))()`);
+    assert(errorScreenState.modalOpen === true, "NOSHY did not open the blocking error screen");
+    assert(errorScreenState.errorOpen === true, "Error screen is not visibly open");
+    assert(errorScreenState.title === "Unable to load words.", `Unexpected error screen title: ${errorScreenState.title}`);
+    assert(errorScreenState.text === "Please reload the page.", `Unexpected error screen text: ${errorScreenState.text}`);
+    assert(errorScreenState.button === "Reload", `Unexpected error screen button text: ${errorScreenState.button}`);
+
     console.log("Browser comprehensive test passed.");
   } finally {
     session.close();
@@ -625,16 +614,18 @@ function terminate(child, signal = "SIGINT") {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const cwd = path.resolve(__dirname, "..");
+  const appUrl = `http://${HOST}:${options.serverPort}/`;
+  const remoteBaseUrl = `http://${HOST}:${options.debugPort}`;
   const chromeProfileDir = await fs.mkdtemp(path.join(os.tmpdir(), "shydle-chrome-profile-"));
 
   const server = spawnLoggedProcess(
     options.python,
-    ["-u", "-m", "http.server", String(SERVER_PORT), "--bind", HOST],
+    ["-u", "-m", "http.server", String(options.serverPort), "--bind", HOST],
     { cwd },
   );
   const chrome = spawnLoggedProcess(options.chrome, [
     "--headless=new",
-    `--remote-debugging-port=${DEBUG_PORT}`,
+    `--remote-debugging-port=${options.debugPort}`,
     `--user-data-dir=${chromeProfileDir}`,
     "about:blank",
   ]);
@@ -642,7 +633,7 @@ async function main() {
   try {
     await waitForOutput(server, /Serving HTTP on/, SERVER_START_TIMEOUT_MS, "HTTP server");
     await waitForOutput(chrome, /DevTools listening on/, CHROME_START_TIMEOUT_MS, "Chrome");
-    await runComprehensiveChecks();
+    await runComprehensiveChecks(appUrl, remoteBaseUrl);
   } finally {
     await terminate(server);
     await terminate(chrome);

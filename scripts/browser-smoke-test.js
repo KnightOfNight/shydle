@@ -6,10 +6,6 @@ const os = require("node:os");
 const path = require("node:path");
 
 const HOST = "127.0.0.1";
-const SERVER_PORT = 8123;
-const DEBUG_PORT = 9222;
-const APP_URL = `http://${HOST}:${SERVER_PORT}/`;
-const REMOTE_BASE_URL = `http://${HOST}:${DEBUG_PORT}`;
 const SERVER_START_TIMEOUT_MS = 10_000;
 const CHROME_START_TIMEOUT_MS = 15_000;
 const PAGE_LOAD_WAIT_MS = 2_500;
@@ -20,6 +16,8 @@ function parseArgs(argv) {
   const options = {
     python: "python3",
     chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    serverPort: 8123,
+    debugPort: 9222,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -32,6 +30,18 @@ function parseArgs(argv) {
 
     if (token === "--chrome") {
       options.chrome = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (token === "--server-port") {
+      options.serverPort = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    if (token === "--debug-port") {
+      options.debugPort = Number(argv[index + 1]);
       index += 1;
       continue;
     }
@@ -109,9 +119,9 @@ function spawnLoggedProcess(command, args, options = {}) {
   return child;
 }
 
-async function createDevToolsSession(targetUrl) {
+async function createDevToolsSession(targetUrl, remoteBaseUrl) {
   const targetResponse = await fetch(
-    `${REMOTE_BASE_URL}/json/new?${encodeURIComponent(targetUrl)}`,
+    `${remoteBaseUrl}/json/new?${encodeURIComponent(targetUrl)}`,
     { method: "PUT" },
   );
 
@@ -187,8 +197,8 @@ function assert(condition, message) {
   }
 }
 
-async function runSmokeChecks() {
-  const session = await createDevToolsSession(APP_URL);
+async function runSmokeChecks(appUrl, remoteBaseUrl) {
+  const session = await createDevToolsSession(appUrl, remoteBaseUrl);
 
   try {
     await sleep(PAGE_LOAD_WAIT_MS);
@@ -212,7 +222,6 @@ async function runSmokeChecks() {
     const initial = await session.evaluate(`(() => ({
       title: document.querySelector(".app-title")?.textContent,
       rows: document.querySelectorAll(".board-row").length,
-      message: document.querySelector("#message")?.textContent.trim(),
       dictionaryReady: typeof dictionaryReady !== "undefined" ? dictionaryReady : null,
       currentMaxGuesses
     }))()`);
@@ -303,7 +312,7 @@ async function runSmokeChecks() {
     assert(revealModalCheck.revealOpen === true, "Reveal modal is not visibly open");
     assert(revealModalCheck.revealTitle === "The word was...", `Unexpected reveal title: ${revealModalCheck.revealTitle}`);
     assert(
-      revealModalCheck.revealText === `The word was ${await session.evaluate(`window.__abandonedWord`)}.`,
+      revealModalCheck.revealText === await session.evaluate(`window.__abandonedWord`),
       `Unexpected reveal text: ${revealModalCheck.revealText}`,
     );
     assert(revealModalCheck.guess === "AB", `Expected in-progress guess to remain until reveal acknowledgement, got ${revealModalCheck.guess}`);
@@ -416,16 +425,18 @@ function terminate(child, signal = "SIGINT") {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const cwd = path.resolve(__dirname, "..");
+  const appUrl = `http://${HOST}:${options.serverPort}/`;
+  const remoteBaseUrl = `http://${HOST}:${options.debugPort}`;
   const chromeProfileDir = await fs.mkdtemp(path.join(os.tmpdir(), "wordle-chrome-profile-"));
 
   const server = spawnLoggedProcess(
     options.python,
-    ["-u", "-m", "http.server", String(SERVER_PORT), "--bind", HOST],
+    ["-u", "-m", "http.server", String(options.serverPort), "--bind", HOST],
     { cwd },
   );
   const chrome = spawnLoggedProcess(options.chrome, [
     "--headless=new",
-    `--remote-debugging-port=${DEBUG_PORT}`,
+    `--remote-debugging-port=${options.debugPort}`,
     `--user-data-dir=${chromeProfileDir}`,
     "about:blank",
   ]);
@@ -433,7 +444,7 @@ async function main() {
   try {
     await waitForOutput(server, /Serving HTTP on/, SERVER_START_TIMEOUT_MS, "HTTP server");
     await waitForOutput(chrome, /DevTools listening on/, CHROME_START_TIMEOUT_MS, "Chrome");
-    await runSmokeChecks();
+    await runSmokeChecks(appUrl, remoteBaseUrl);
   } finally {
     await terminate(server);
     await terminate(chrome);

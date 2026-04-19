@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SHYDLE</title>
-    <meta name="webpage-version" content="e811d79ad2e1" />
-    <link rel="stylesheet" href="./styles.css?v=e811d79ad2e1" />
+    <meta name="webpage-version" content="019f1b3f975d" />
+    <link rel="stylesheet" href="./styles.css?v=019f1b3f975d" />
   </head>
   <body>
     <main class="app">
@@ -26,6 +26,13 @@
               ></div>
               <div class="keyboard-actions" aria-label="Keyboard actions">
                 <button
+                  id="clear-row-button"
+                  class="keyboard-action keyboard-action-clear"
+                  type="button"
+                >
+                  CLEAR
+                </button>
+                <button
                   id="backspace-key-button"
                   class="keyboard-action keyboard-action-backspace"
                   type="button"
@@ -45,10 +52,10 @@
             <div class="button-frame">
               <div class="board-actions">
                 <button id="hint-button" class="secondary-button" type="button">
-                  Hint
+                  HINT
                 </button>
                 <button id="new-game-button" class="new-game-button" type="button">
-                  Start New Game
+                  NEW GAME
                 </button>
                 <button
                   id="settings-button"
@@ -60,15 +67,11 @@
                 </button>
               </div>
             </div>
-
-            <div class="message-frame">
-              <p id="message" class="message" aria-live="polite"></p>
-            </div>
           </div>
         </div>
       </section>
 
-      <p class="asset-version">Version e811d79ad2e1</p>
+      <p class="asset-version">019f1b3f975d 2026-04-19T02:33:13Z</p>
     </main>
 
     <div
@@ -88,10 +91,10 @@
         </p>
         <div class="modal-actions">
           <button id="confirm-cancel-button" class="modal-button modal-button-cancel" type="button">
-            Keep Playing
+            KEEP PLAYING
           </button>
           <button id="confirm-accept-button" class="modal-button modal-button-accept" type="button">
-            Start New Game
+            NEW GAME
           </button>
         </div>
       </div>
@@ -112,7 +115,7 @@
         <p id="reveal-modal-text" class="modal-text"></p>
         <div class="modal-actions">
           <button id="reveal-ok-button" class="modal-button modal-button-accept" type="button">
-            OK
+            NEW GAME
           </button>
         </div>
       </div>
@@ -148,7 +151,7 @@
         </div>
         <div class="modal-actions">
           <button id="settings-close-button" class="modal-button modal-button-accept" type="button">
-            Close Settings
+            CLOSE
           </button>
         </div>
       </div>
@@ -169,7 +172,7 @@
         <p id="win-modal-text" class="modal-text"></p>
         <div class="modal-actions">
           <button id="win-new-game-button" class="modal-button modal-button-accept" type="button">
-            Start New Game
+            NEW GAME
           </button>
         </div>
       </div>
@@ -190,12 +193,56 @@
         <p id="lose-modal-text" class="modal-text"></p>
         <div class="modal-actions">
           <button id="lose-new-game-button" class="modal-button modal-button-accept" type="button">
-            Start New Game
+            NEW GAME
           </button>
         </div>
       </div>
     </div>
 
-    <script src="./script.js?v=e811d79ad2e1"></script>
+    <div
+      id="no-more-hints-modal"
+      class="modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="no-more-hints-modal-title"
+      aria-describedby="no-more-hints-modal-text"
+    >
+      <div id="no-more-hints-modal-backdrop" class="modal-backdrop"></div>
+      <div class="modal-panel">
+        <h2 id="no-more-hints-modal-title" class="modal-title">No more hints!</h2>
+        <p id="no-more-hints-modal-text" class="modal-text">
+          I&#39;ve told you all I can. It&#39;s up to you now!
+        </p>
+        <div class="modal-actions">
+          <button id="no-more-hints-close-button" class="modal-button modal-button-accept" type="button">
+            CLOSE
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="error-screen"
+      class="modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="error-screen-title"
+      aria-describedby="error-screen-text"
+    >
+      <div class="modal-backdrop"></div>
+      <div class="modal-panel">
+        <h2 id="error-screen-title" class="modal-title">Unable to load words.</h2>
+        <p id="error-screen-text" class="modal-text">Please reload the page.</p>
+        <div class="modal-actions">
+          <button id="error-screen-reload-button" class="modal-button modal-button-accept" type="button">
+            RELOAD
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="./script.js?v=019f1b3f975d"></script>
   </body>
 </html>

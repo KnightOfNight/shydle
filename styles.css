@@ -19,6 +19,10 @@
   box-sizing: border-box;
 }
 
+button {
+  font-weight: 800;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -66,18 +70,6 @@ body {
   padding: 24px 18px 20px;
 }
 
-.message {
-  margin: 0;
-  color: var(--muted);
-  width: 100%;
-  text-align: left;
-  font-weight: 700;
-}
-
-.message + .message {
-  margin-top: 8px;
-}
-
 .is-hidden {
   display: none;
 }
@@ -109,8 +101,7 @@ body {
 }
 
 .board-frame,
-.keyboard-frame,
-.message-frame {
+.keyboard-frame {
   border: 1px solid rgba(112, 98, 69, 0.32);
   border-radius: 18px;
   background: rgba(255, 252, 245, 0.72);
@@ -208,6 +199,11 @@ body {
   transform: translateY(1px);
 }
 
+.new-game-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .icon-button {
   border: 1px solid rgba(112, 98, 69, 0.3);
   border-radius: 999px;
@@ -294,10 +290,26 @@ body {
 }
 
 .keyboard-action-enter {
+  background: rgba(79, 122, 56, 0.45);
+}
+
+.keyboard-action-enter.is-active {
   background: var(--correct);
 }
 
+.keyboard-action-clear {
+  background: rgba(47, 95, 185, 0.45);
+}
+
+.keyboard-action-clear.is-active {
+  background: #2f5fb9;
+}
+
 .keyboard-action-backspace {
+  background: rgba(47, 95, 185, 0.45);
+}
+
+.keyboard-action-backspace.is-active {
   background: #2f5fb9;
 }
 
@@ -314,14 +326,6 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-
-.message-frame {
-  align-self: start;
-  width: 100%;
-  min-height: 4em;
-  padding: 0.5em;
-  background: #fffdf8;
 }
 
 .modal {
@@ -373,6 +377,14 @@ body {
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.45;
+}
+
+#confirm-modal-text,
+#reveal-modal-text,
+#win-modal-text,
+#lose-modal-text {
+  font-size: 1.5rem;
+  font-weight: 700;
 }
 
 .modal-actions {
@@ -449,6 +461,13 @@ body {
   border-color: #8c6a24;
   background: var(--tile-active);
   box-shadow: 0 0 0 4px rgba(194, 140, 29, 0.16);
+}
+
+.tile.invalid {
+  background: #b92f25;
+  border-color: #8b211a;
+  color: #fffdf8;
+  box-shadow: none;
 }
 
 .tile.revealed {
@@ -570,7 +589,7 @@ body {
 
 @media (max-width: 640px) {
   .app {
-    padding: 16px 8px 24px;
+    padding: 3px;
     width: 100%;
   }
 
@@ -616,23 +635,16 @@ body {
 
   .side-panel-stack,
   .board-frame,
-  .keyboard-frame,
-  .message-frame {
+  .keyboard-frame {
     border: 0;
     border-radius: 14px;
     background: transparent;
     box-shadow: none;
   }
 
-  .message-frame {
-    border: 1px solid rgba(112, 98, 69, 0.32);
-    background: #fffdf8;
-  }
-
   .side-panel-stack,
   .board-frame,
-  .keyboard-frame,
-  .message-frame {
+  .keyboard-frame {
     width: 100%;
     max-width: none;
     justify-self: stretch;
@@ -662,7 +674,6 @@ body {
   .keyboard,
   .keyboard-frame,
   .keyboard-row,
-  .message-frame,
   .side-panel-stack {
     width: 100%;
   }
@@ -676,7 +687,7 @@ body {
     flex: 1 1 0;
     padding-inline: 0;
     min-height: 48px;
-    font-size: 0.88rem;
+    font-size: 1.3rem;
     padding-block: 12px;
   }
 
