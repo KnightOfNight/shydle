@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: shydle
+spec:
+  type: LoadBalancer
+  selector:
+    app: shydle
+  ports:
+    - port: 8080
+      targetPort: 80
