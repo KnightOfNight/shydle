@@ -587,7 +587,7 @@ async function runComprehensiveChecks(appUrl, remoteBaseUrl) {
     assert(errorScreenState.errorOpen === true, "Error screen is not visibly open");
     assert(errorScreenState.title === "Unable to load words.", `Unexpected error screen title: ${errorScreenState.title}`);
     assert(errorScreenState.text === "Please reload the page.", `Unexpected error screen text: ${errorScreenState.text}`);
-    assert(errorScreenState.button === "Reload", `Unexpected error screen button text: ${errorScreenState.button}`);
+    assert(errorScreenState.button === "RELOAD", `Unexpected error screen button text: ${errorScreenState.button}`);
 
     console.log("Browser comprehensive test passed.");
   } finally {

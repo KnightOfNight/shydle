@@ -14,6 +14,7 @@ K8S_CONTAINERD_ADDRESS ?= /var/run/docker/containerd/containerd.sock
 WEBPAGE_SOURCES = index.html.in script.js styles.css words.json
 WEBPAGE_VERSION := $(shell cat $(WEBPAGE_SOURCES) | shasum -a 256 | awk '{print $$1}' | cut -c1-12)
 WEBPAGE_TIMESTAMP := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+IMAGE_REF := $(IMAGE):$(WEBPAGE_VERSION)
 
 test-browser-smoke:
 	$(NODE) tests/browser-smoke-test.js --python $(PYTHON) --chrome $(CHROME) --server-port $(SMOKE_SERVER_PORT) --debug-port $(SMOKE_DEBUG_PORT)
@@ -28,14 +29,13 @@ webpage:
 	echo "Rendered index.html with version $(WEBPAGE_VERSION) at $(WEBPAGE_TIMESTAMP)"
 
 container:
-	docker build --no-cache --pull -t $(IMAGE):$(TAG) .
+	docker build --no-cache --pull -t $(IMAGE_REF) .
 
 container-local-files:
-	docker build --no-cache --pull -f Dockerfile.local -t $(IMAGE):$(TAG) .
-#	docker save $(IMAGE):$(TAG) | nerdctl --address $(K8S_CONTAINERD_ADDRESS) -n k8s.io load
+	docker build --no-cache --pull -f Dockerfile.local -t $(IMAGE_REF) .
 
 k8s-apply:
-	sed "s/\$${IMAGE_TAG}/$(TAG)/g" k8s/deployment.yaml | kubectl apply -f -
+	yq -i '.spec.template.spec.containers[0].image = "$(IMAGE_REF)"' k8s/deployment.yaml
 	kubectl apply -f k8s/service.yaml
 
 k8s-restart:

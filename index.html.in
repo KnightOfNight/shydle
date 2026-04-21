@@ -37,14 +37,14 @@
                   class="keyboard-action keyboard-action-backspace"
                   type="button"
                 >
-                  Backspace
+                  BACKSPACE
                 </button>
                 <button
                   id="enter-key-button"
                   class="keyboard-action keyboard-action-enter"
                   type="button"
                 >
-                  Enter
+                  ENTER
                 </button>
               </div>
             </div>
