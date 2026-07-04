@@ -18,10 +18,10 @@ Standalone Wordle-style browser game built with static HTML, CSS, and JavaScript
 - `styles.css`: game styling
 - `script.js`: game logic
 - `words.json`: runtime answer/guess database
-- `words-answers.txt`: source word list used to build `words.json` answers
-- `words-guesses.txt`: source word list used to build `words.json` guesses
-- `scripts/browser-smoke-test.js`: browser smoke test
-- `scripts/browser-comprehensive-test.js`: broader browser regression test
+- `notes/words-answers.txt`: source word list used to build `words.json` answers
+- `notes/words-guesses.txt`: source word list used to build `words.json` guesses
+- `tests/browser-smoke-test.js`: browser smoke test
+- `tests/browser-comprehensive-test.js`: broader browser regression test
 
 ## Run locally
 
@@ -69,4 +69,4 @@ make test-browser-comprehensive
 
 ## Deployment
 
-Deployment details live in `DEPLOY.MD`.
+Deployment details live in `README-DEPLOY.md`.
