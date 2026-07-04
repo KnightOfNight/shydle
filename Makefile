@@ -1,4 +1,4 @@
-.PHONY: test-browser-smoke test-browser-comprehensive test-all webpage container container-local-files k8s-apply k8s-restart deploy deploy-local
+.PHONY: test-browser-smoke test-browser-comprehensive test-all webpage container container-local-files k8s-apply k8s-restart deploy deploy-local nuke
 
 NODE ?= /opt/homebrew/bin/node
 PYTHON ?= python3
@@ -36,7 +36,7 @@ container-local-files:
 
 k8s-apply:
 	yq -i '.spec.template.spec.containers[0].image = "$(IMAGE_REF)"' k8s/deployment.yaml
-	kubectl apply -f k8s/service.yaml
+	kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml
 
 k8s-restart:
 	kubectl rollout restart deployment/$(IMAGE)
@@ -44,3 +44,8 @@ k8s-restart:
 deploy-local: container-local-files k8s-apply k8s-restart
 
 deploy: container k8s-apply k8s-restart
+
+nuke:
+	kubectl delete --ignore-not-found deployment/$(IMAGE) service/$(IMAGE)
+	@images=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^$(IMAGE):' || true); \
+	if [ -n "$$images" ]; then docker rmi $$images; else echo "No $(IMAGE) images to remove."; fi
